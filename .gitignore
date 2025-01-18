@@ -1,0 +1,7 @@
+.env
+rankings.db
+spread_model.booster
+temp.py
+/__pycache__
+/cogs/__pycache__
+/models/__pycache__
