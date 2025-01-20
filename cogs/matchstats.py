@@ -29,10 +29,10 @@ class Matchstats(commands.Cog):
             await ctx.send(f"No match stats found for {player.mention}.")
             return
 
-        stats_message = await ctx.send(f"Match Stats for {player.mention}")
+        stats_message = await ctx.send(f"**Match Stats for {player.mention}**")
 
         thread = await ctx.channel.create_thread(
-            name=f'**Match Stats for {player.display_name}**',
+            name=f'Match Stats for {player.display_name}',
             message=stats_message
         )
 

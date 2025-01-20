@@ -86,7 +86,7 @@ async def handle_bet_placements(match_title, favorite, underdog, match, thread, 
             "UPDATE players SET straftcoins = straftcoins - ? WHERE user_id = ?",
             (bet_amount, user_id)
         )
-        await thread.send(f"{message.author.mention} bet {bet_amount}{emojis[0]} on {bet_type}({bet_value}, {bet_odds}) to win {amount_to_win}{emojis[0]}. You have {current_coins - bet_amount}{emojis[0]} left.")
+        await thread.send(f"{message.author.mention}\n- Bet: {bet_amount}{emojis[0]} on {bet_type} (**{bet_value}**, {bet_odds} odds)\n- To Win: {amount_to_win}{emojis[0]}\n- Current Balance: {current_coins - bet_amount}{emojis[0]}")
        
     else:
         # User doesn't exist, insert them and deduct the bet
@@ -108,14 +108,14 @@ async def handle_bet_placements(match_title, favorite, underdog, match, thread, 
             "INSERT INTO players (user_id, straftcoins) VALUES (?, ?)",
             (user_id, initial_coins - bet_amount)
         )
-        await thread.send(f"{message.author.mention} added as player! Bet {bet_amount}{emojis[0]} on {bet_type}({bet_value}, {bet_odds}) to win {amount_to_win}{emojis[0]}. You have {initial_coins - bet_amount}{emojis[0]} left.")
+        await thread.send(f"{message.author.mention} added as player!\n- Bet: {bet_amount}{emojis[0]} on {bet_type} (**{bet_value}**, {bet_odds} odds)\n- To Win: {amount_to_win}{emojis[0]}\n- Current Balance: {initial_coins - bet_amount}{emojis[0]}")
 
     await db.commit()
 
     return bet
 
-async def odds_to_percentage(w_or_l, bet_odds, bet_amount):
-    if w_or_l == 'win':
+async def odds_to_percentage(w_or_l_or_p, bet_odds, bet_amount):
+    if w_or_l_or_p == 'win':
 
         bet_odds_str = str(bet_odds)
 
@@ -128,9 +128,13 @@ async def odds_to_percentage(w_or_l, bet_odds, bet_amount):
             amount1 = round(bet_amount * odds_prcnt)
             amount2 = 0
 
-    else:
+    elif w_or_l_or_p == 'loss':
         amount1 = 0
         amount2 = bet_amount
+        
+    else:
+        amount1 = 0
+        amount2 = 0
 
     return amount1, amount2
 
@@ -167,12 +171,13 @@ async def check_match_titles(player1_name, player2_name, db):
 async def win_loss_determination(bets, match_id, spread, match_winner_id, total_rounds):
     winning_bets = []
     losing_bets = []
+    pushed_bets = []
 
     for _, user_id, match_title, match_favorite_id, match_underdog_id, playerid_bet_on, bet_type, bet_value, bet_odds, bet_amount in bets:
         
-        async def win_loss_info(w_or_l):
-            bet_outcome = w_or_l
-            amount1, amount2 = await odds_to_percentage(w_or_l, bet_odds, bet_amount)
+        async def win_loss_info(w_or_l_or_p):
+            bet_outcome = w_or_l_or_p
+            amount1, amount2 = await odds_to_percentage(w_or_l_or_p, bet_odds, bet_amount)
             amount_won = amount1
             amount_lost = amount2
 
@@ -193,40 +198,57 @@ async def win_loss_determination(bets, match_id, spread, match_winner_id, total_
             return bet_info
         
         async def append_result(is_winner):
-            if is_winner:
+            if is_winner == 'win':
                 winning_bets.append(await win_loss_info('win'))
-            else:
+
+            elif is_winner == 'loss':
                 losing_bets.append(await win_loss_info('loss'))
+
+            else:
+                pushed_bets.append(await win_loss_info('push'))
 
         if bet_type == 'Spread':
             placed_neg_or_pos = bet_value[0]
             placed_value = float(bet_value[1:])
-            is_winner = False
+            is_winner = 'loss'
             
-            if placed_neg_or_pos == '-' and spread >= placed_value:
+            if placed_neg_or_pos == '-' and spread > placed_value:
                 if match_winner_id == match_favorite_id:
-                    is_winner = True
+                    is_winner = 'win'
             else:
-                if placed_neg_or_pos == '+' and spread <= placed_value:
-                    is_winner = True
+                if placed_neg_or_pos == '+':
+                    if match_winner_id != match_favorite_id or spread < placed_value:
+                        is_winner = 'win'
 
+            if placed_value == spread:
+                is_winner = 'push'
+            
             await append_result(is_winner)
 
         elif bet_type == 'Moneyline':
+            is_winner = 'loss'
 
-            await append_result(playerid_bet_on == match_winner_id)
+            if playerid_bet_on == match_winner_id:
+                is_winner = 'win'
+
+            await append_result(is_winner)
 
         elif bet_type == 'O/U':
             placed_o_or_u = bet_value[0]
             placed_value = float(bet_value[1:])
+            is_winner = 'loss'
 
-            is_winner = (placed_o_or_u == 'O' and total_rounds > placed_value) or (placed_o_or_u == 'U' and total_rounds < placed_value)
+            if (placed_o_or_u == 'O' and total_rounds > placed_value) or (placed_o_or_u == 'U' and total_rounds < placed_value):
+                is_winner = 'win'
+
+            if total_rounds == placed_value:
+                is_winner = 'push'
 
             await append_result(is_winner)
-            
-    all_bets = winning_bets + losing_bets
 
-    return all_bets, winning_bets
+    all_bets = winning_bets + losing_bets + pushed_bets
+
+    return all_bets, winning_bets, pushed_bets
 
 async def handle_bet_payouts(match_id, player1_name, player2_name, match_winner_id, spread, total_rounds, db):
     
@@ -237,7 +259,7 @@ async def handle_bet_payouts(match_id, player1_name, player2_name, match_winner_
         if not bets:
             return False
 
-        all_bets, winning_bets = await win_loss_determination(bets, match_id, spread, match_winner_id, total_rounds)
+        all_bets, winning_bets, pushed_bets = await win_loss_determination(bets, match_id, spread, match_winner_id, total_rounds)
         
         # Insert the bets into the past_bets table
         await db.executemany(
@@ -247,12 +269,23 @@ async def handle_bet_payouts(match_id, player1_name, player2_name, match_winner_
             """, all_bets
         )
 
-        updates = [(bet[11], bet[0]) for bet in winning_bets]
+        # Handle bets that won
+        if len(winning_bets)>0:
+            win_updates = [(bet[11], bet[0]) for bet in winning_bets]
 
-        async with db.executemany(
-            "UPDATE players SET straftcoins = straftcoins + ? WHERE user_id = ?", updates
-        ):
-            pass
+            async with db.executemany(
+                "UPDATE players SET straftcoins = straftcoins + ? WHERE user_id = ?", win_updates
+            ):
+                pass
+        
+        # Handle bets that pushed
+        if len(pushed_bets) > 0:
+            push_updates = [(bet[9], bet[0]) for bet in pushed_bets]
+
+            async with db.executemany(
+                "UPDATE players SET straftcoins = straftcoins + ? WHERE user_id = ?", push_updates
+            ):
+                pass
 
         # Remove the bets from the live_bets table
         await db.execute(
@@ -272,9 +305,11 @@ async def handle_bet_payouts(match_id, player1_name, player2_name, match_winner_
 
             if bet_outcome == 'win':
                 bet_settlements_message += f"{bettor}: **Bet Won** {emojis[0]}\n- Bet: {bet_type} (**{bet_value}**, {bet_amount}{emojis[2]}, {'+' if bet_odds > 0 else ''}{bet_odds} odds)\n- Amount Won: {amount_won}{emojis[2]}\n- Balance: {new_straftcoin_balance}{emojis[2]}\n"
-            else:
+            if bet_outcome == 'loss':
                 bet_settlements_message += f"{bettor}: **Bet Lost** {emojis[1]}\n- Bet: {bet_type} (**{bet_value}**, {bet_amount}{emojis[2]}, {'+' if bet_odds > 0 else ''}{bet_odds} odds)\n- Balance: {new_straftcoin_balance}{emojis[2]}\n"
-        
+            if bet_outcome == 'push':
+                bet_settlements_message += f"{bettor}: **Bet Pushed** {emojis[1]}\n- Bet: {bet_type} (**{bet_value}**, {bet_amount}{emojis[2]}, {'+' if bet_odds > 0 else ''}{bet_odds} odds)\n- Amount Returned: {bet_amount}{emojis[2]}\n- Balance: {new_straftcoin_balance}{emojis[2]}\n"
+
         return bet_settlements_message
 
     except Exception as e:
