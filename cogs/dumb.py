@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import random
 from command_helpers import match_to_db, get_display_name
+from model_helpers import train_models
 import aiosqlite
 
 class Dumb(commands.Cog):
@@ -17,8 +18,8 @@ class Dumb(commands.Cog):
                 return
             
             # Hardcoded list of player IDs (replace these with actual Discord user IDs)
-            player_ids = [1321317232797810749, 946593018226540545, 947655647955140659]
-            # player_ids = [946593018226540545, 947655647955140659]
+            # player_ids = [1321317232797810749, 946593018226540545, 947655647955140659]
+            player_ids = [946593018226540545, 947655647955140659]
 
             # Randomize matches between players
             matches_to_create = 10  # Number of dummy matches to generate
@@ -55,5 +56,7 @@ class Dumb(commands.Cog):
             # Send results to the Discord channel
             await thread.send("**Dummy Matches Created:**\n" + "\n".join(results))
 
+            await train_models('spread', db)
+            
 async def setup(bot):
     await bot.add_cog(Dumb(bot))

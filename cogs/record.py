@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from command_helpers import match_to_db
 from bet_helpers import handle_bet_payouts
-from model_helpers import incremental_train
+from model_helpers import train_models
 import aiosqlite
 import xgboost as xgb
 
@@ -54,11 +54,8 @@ class Record(commands.Cog):
 
                     await thread.send(bet_settlements_message)
 
-                # Incrementally train spread and over/under model
-                xgb.set_config(verbosity=0)
-
-                await incremental_train(match_id, 'spread', db)
-                # await incremental_train(match_id, 'total_rounds', db)
+                await train_models('spread', db)
+                # await train_models('total_rounds', db)
 
             except Exception as e:
                 await ctx.send(f"An error occurred while recording the match: {e}")

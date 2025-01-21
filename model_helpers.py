@@ -1,6 +1,7 @@
 import pandas as pd
 import xgboost as xgb
-import os
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error
 
 async def fetch_data(db):
     matches = await db.execute_fetchall("SELECT * FROM matches")
@@ -37,7 +38,7 @@ async def prepare_features(matches_df_init, players_df_init, predicted_variable)
                 "winner_win_rate", "loser_win_rate", "winner_round_rate", "loser_round_rate"]
     X = matches_df[features]
     y = matches_df[predicted_variable]
-
+    
     return X, y
 
 async def predict_variable(player1_id, player2_id, predicted_variable, db):
@@ -73,37 +74,48 @@ async def predict_variable(player1_id, player2_id, predicted_variable, db):
 
     avg_pred_variable = (pred_variable1 + pred_variable2) / 2
     avg_pred_variable = round(avg_pred_variable*2)/2
-    
+
     return avg_pred_variable
 
-async def incremental_train(match_id, predicted_variable, db):
+async def train_models(predicted_variable, db):
     
-    if predicted_variable == 'spread':
-        model_path = 'spread_model.booster'
-    elif predicted_variable == 'total_rounds':
-        model_path = 'over_under_model.booster'  
-    
-    if os.path.exists(model_path):
-        booster = xgb.Booster()
-        booster.load_model(model_path)
-    else:
-        print("No existing model found. Train a model first.")
-        return
-
-    # Fetch player data and new match data
+    # Fetch data
     matches_df, players_df = await fetch_data(db)
 
-    new_match_data = matches_df[matches_df["match_id"] == match_id]
+    # Prepare features and target
+    X, y = await prepare_features(matches_df, players_df, predicted_variable)
 
-    # Prepare features for the new match
-    X_new, y_new = await prepare_features(new_match_data, players_df, predicted_variable)
+    # Train-test split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Convert to DMatrix for XGBoost
-    dnew = xgb.DMatrix(X_new, label=y_new)
+    # Convert to DMatrix
+    dtrain = xgb.DMatrix(X_train, label=y_train)
+    dtest = xgb.DMatrix(X_test, label=y_test)
 
-    # Incrementally update the model
-    booster.update(dnew, iteration=1)
+    # Set parameters for training
+    params = {
+        "objective": "reg:squarederror",
+        "learning_rate": 0.1,
+        "max_depth": 5,
+        "seed": 42,
+    }
+    num_boost_round = 100
 
-    # Save the updated model
-    booster.save_model(model_path)
-    print('Model Updated')
+    # Train the model
+    booster = xgb.train(
+        params, 
+        dtrain, 
+        num_boost_round=num_boost_round, 
+        evals=[(dtest, "test")],
+        verbose_eval=True
+    )
+
+    if predicted_variable == 'spread':
+        booster.save_model("spread_model.booster")
+    elif predicted_variable == 'total_rounds':
+        booster.save_model("over_under_model.booster")
+
+    # Evaluate the model
+    y_pred = booster.predict(dtest)
+    mae = mean_absolute_error(y_test, y_pred)
+    print(f"Mean Absolute Error: {mae:.2f}")

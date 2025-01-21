@@ -5,3 +5,4 @@ temp.py
 /__pycache__
 /cogs/__pycache__
 /models/__pycache__
+/cogs/dumb.py

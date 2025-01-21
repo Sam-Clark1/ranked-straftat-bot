@@ -36,7 +36,7 @@ async def train_models(predicted_variable):
             params, 
             dtrain, 
             num_boost_round=num_boost_round, 
-            evals=[(dtest, "test")],
+            # evals=[(dtest, "test")],
             verbose_eval=True
         )
 
@@ -49,6 +49,6 @@ async def train_models(predicted_variable):
         y_pred = booster.predict(dtest)
         mae = mean_absolute_error(y_test, y_pred)
         print(f"Mean Absolute Error: {mae:.2f}")
-        
+  
 asyncio.run(train_models('spread'))
 # asyncio.run(train_models('total_rounds'))
