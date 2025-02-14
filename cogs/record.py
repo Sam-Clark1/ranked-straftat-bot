@@ -4,7 +4,6 @@ from command_helpers import match_to_db
 from bet_helpers import handle_bet_payouts
 from model_helpers import train_models
 import aiosqlite
-import xgboost as xgb
 
 class Record(commands.Cog):
     def __init__(self, bot):

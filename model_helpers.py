@@ -38,7 +38,7 @@ async def prepare_features(matches_df_init, players_df_init, predicted_variable)
                 "winner_win_rate", "loser_win_rate", "winner_round_rate", "loser_round_rate"]
     X = matches_df[features]
     y = matches_df[predicted_variable]
-    
+
     return X, y
 
 async def predict_variable(player1_id, player2_id, predicted_variable, db):
@@ -67,15 +67,15 @@ async def predict_variable(player1_id, player2_id, predicted_variable, db):
         return xgb.DMatrix(new_data)
 
     dnew1 = prepare_new_data(player1_id, player2_id)
-    dnew2 = prepare_new_data(player2_id, player1_id)
+    # dnew2 = prepare_new_data(player2_id, player1_id)
 
     pred_variable1 = booster.predict(dnew1)[0]
-    pred_variable2 = booster.predict(dnew2)[0]
+    # pred_variable2 = booster.predict(dnew2)[0]
 
-    avg_pred_variable = (pred_variable1 + pred_variable2) / 2
-    avg_pred_variable = round(avg_pred_variable*2)/2
-
-    return avg_pred_variable
+    # avg_pred_variable = (pred_variable1 + pred_variable2) / 2
+    pred_variable1 = round(pred_variable1*2)/2
+    
+    return pred_variable1
 
 async def train_models(predicted_variable, db):
     
@@ -106,7 +106,7 @@ async def train_models(predicted_variable, db):
         params, 
         dtrain, 
         num_boost_round=num_boost_round, 
-        evals=[(dtest, "test")],
+        # evals=[(dtest, "test")],
         verbose_eval=True
     )
 
@@ -116,6 +116,6 @@ async def train_models(predicted_variable, db):
         booster.save_model("over_under_model.booster")
 
     # Evaluate the model
-    y_pred = booster.predict(dtest)
-    mae = mean_absolute_error(y_test, y_pred)
-    print(f"Mean Absolute Error: {mae:.2f}")
+    # y_pred = booster.predict(dtest)
+    # mae = mean_absolute_error(y_test, y_pred)
+    # print(f"Mean Absolute Error: {mae:.2f}")
