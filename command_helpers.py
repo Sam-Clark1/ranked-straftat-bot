@@ -106,9 +106,9 @@ async def handle_inputted_players(players, db):
 
 # Calculate Elo change
 async def calculate_elo(winner_rounds, loser_rounds, rating1, rating2):
-    K_FACTOR = 160  # Elo constant
+    K_FACTOR = 100  # Elo constant
     round_ratio = (winner_rounds - loser_rounds) / 10
-    round_adjustment = (K_FACTOR/8)*round_ratio
+    round_adjustment = (K_FACTOR/5)*round_ratio
 
     winner_expected_score = 1 / (1 + 10 ** ((rating2 - rating1) / 400))
     loser_expected_score = 1 / (1 + 10 ** ((rating1 - rating2) / 400))
@@ -127,9 +127,9 @@ async def calculate_sp_changes(winner_rating, loser_rating, winner_rounds, loser
     round_ratio = (winner_rounds - loser_rounds) / 10  # Normalize to a scale of -1 to 1
     
     thresholds = [
-    (0.95, 50), (0.85, 100), (0.80, 110), (0.70, 120), (0.65, 140), (0.60, 150), 
-    (0.55, 160), (0.50, 170), (0.40, 180), (0.30, 190), (0.20, 200), 
-    (0.10, 210)
+    (0.95, 110), (0.85, 120), (0.80, 140), (0.70, 160), (0.65, 160), (0.60, 170), 
+    (0.55, 180), (0.50, 200), (0.40, 200), (0.30, 200), (0.20, 200), 
+    (0.10, 200)
     ]
 
     for threshold, sp in thresholds:
@@ -137,7 +137,7 @@ async def calculate_sp_changes(winner_rating, loser_rating, winner_rounds, loser
             base_sp = sp
             break
     else:
-        base_sp = 300
+        base_sp = 250
     
     sp_for_round_ratio = int(round(base_sp / 4))
     
@@ -147,7 +147,7 @@ async def calculate_sp_changes(winner_rating, loser_rating, winner_rounds, loser
     winner_sp_change = int(round(winner_sp_change))  # Ensure at least 1 SP is gained
      
     # Loser SP calculation
-    loser_sp_change = int(winner_sp_change * 0.50)  # Loser loses 50% of what the winner gains
+    loser_sp_change = int(winner_sp_change * 0.35)  # Loser loses 50% of what the winner gains
 
     loser_sp_change = loser_sp_change * elo_difference_percentage
     
@@ -161,9 +161,9 @@ async def calculate_straftcoin_changes(winner_rounds, loser_rounds, expected_sco
     round_ratio = (winner_rounds - loser_rounds) / 10
 
     thresholds = [
-    (0.95, 25, 0.95), (0.85, 50, 0.9), (0.80, 100, 0.8), (0.70, 120, 0.7), 
-    (0.65, 140, 0.6), (0.60, 150, 0.6), (0.55, 160, 0.5), (0.50, 170, 0.5), 
-    (0.40, 200, 0.3), (0.30, 230, 0.25), (0.20, 270, 0.15), (0.10, 350, 0.15)
+    (0.95, 1000, 0.95), (0.85, 1100, 0.9), (0.80, 1200, 0.8), (0.70, 1300, 0.7), 
+    (0.65, 1400, 0.6), (0.60, 1500, 0.6), (0.55, 1600, 0.5), (0.50, 1700, 0.5), 
+    (0.40, 1800, 0.5), (0.30, 1900, 0.5), (0.20, 2000, 0.5), (0.10, 2100, 0.5)
     ]
 
     for threshold, straftcoin, percentage in thresholds:
@@ -172,8 +172,8 @@ async def calculate_straftcoin_changes(winner_rounds, loser_rounds, expected_sco
             loser_percent_cut = percentage
             break
     else:
-        base_straftcoin = 500
-        loser_percent_cut = 0.1
+        base_straftcoin = 2500
+        loser_percent_cut = 0.5
 
     straftcoin_for_round_ratio = int(round(base_straftcoin / 4))
 

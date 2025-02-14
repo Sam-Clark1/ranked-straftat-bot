@@ -5,7 +5,7 @@ import re
 import aiosqlite
 import random
 from model_helpers import predict_variable
-from bet_helpers import check_match_titles, handle_bet_placements, create_table_image, percentage_to_odds
+from bet_helpers import check_match_titles, handle_bet_placements, create_table_image, percentage_to_odds, calc_performance_score, calculate_win_probability
 from command_helpers import handle_inputted_players, get_rating, get_emoji, calculate_elo, get_players, get_display_name, get_player_matches
 
 class Bet(commands.Cog):
@@ -45,10 +45,15 @@ class Bet(commands.Cog):
                 message=bot_message
             )
 
-            player1_rating = await get_rating(db, player1.id)
-            player2_rating = await get_rating(db, player2.id)
+            # player1_rating = await get_rating(db, player1.id)
+            # player2_rating = await get_rating(db, player2.id)
             
-            _, _, player1_win_prob, player2_win_prob = await calculate_elo(1, 1, player1_rating, player2_rating)
+            # _, _, player1_win_prob, player2_win_prob = await calculate_elo(1, 1, player1_rating, player2_rating)
+
+            player_1_p_score = await calc_performance_score(player1.id, player2.id, db)
+            player_2_p_score = await calc_performance_score(player2.id, player1.id, db)
+
+            player1_win_prob, player2_win_prob = await calculate_win_probability(player_1_p_score, player_2_p_score)
 
             player1_info = [player1.display_name, player1_win_prob, player1.id]
             player2_info = [player2.display_name, player2_win_prob, player2.id]
@@ -64,10 +69,13 @@ class Bet(commands.Cog):
             player2_played_true = await get_player_matches(db, player2_info[2])
            
             if player1_played_true and player2_played_true:
-                predicted_spread = await predict_variable(player1_info[2], player2_info[2], 'spread', db)
+                predicted_spread = await predict_variable(favorite[2], underdog[2], 'spread', db)
                 # predicted_ou = await predict_variable(player1_info[2], player2_info[2], 'total_rounds', db)
+            elif player1_played_true or player2_played_true:
+                predicted_spread = 6.5
+                # predicted_ou = 15
             else:
-                predicted_spread = 5
+                predicted_spread = 4.5
                 # predicted_ou = 15
 
             favorite_spread, favorite_moneyline, over_value = f'-{predicted_spread}', favorite[0], f'O{20 - predicted_spread}'
@@ -100,7 +108,7 @@ class Bet(commands.Cog):
 
             # Notify users in the thread
             await thread.send(f"Welcome to the betting thread for **{match_title}**!\n"
-                            f"- Bet using **'A 100'**, where **A** is the bet type and **100** is the amount your betting.\n"
+                            f"- Bet using **'A 100'**, where **A** is the bet type and **100** is the amount you\'re betting.\n"
                             f"- Bets lock in after 2 minutes. No more bets on this matchup can be made until the match is played.\n"
                             f"- Everyone can bet, even if you\'ve never played a ranked match (you\'ll start with 1000 {straftcoin_emoji[0]})."
                               )

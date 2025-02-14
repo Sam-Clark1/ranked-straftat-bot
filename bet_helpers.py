@@ -212,17 +212,17 @@ async def win_loss_determination(bets, match_id, spread, match_winner_id, total_
             placed_value = float(bet_value[1:])
             is_winner = 'loss'
             
-            if placed_neg_or_pos == '-' and spread > placed_value:
-                if match_winner_id == match_favorite_id:
+            if placed_neg_or_pos == '-':
+                if match_winner_id == match_favorite_id and spread > placed_value:
                     is_winner = 'win'
-            else:
-                if placed_neg_or_pos == '+':
-                    if match_winner_id != match_favorite_id or spread < placed_value:
-                        is_winner = 'win'
-
-            if placed_value == spread:
-                is_winner = 'push'
-            
+                elif match_winner_id == match_favorite_id and spread == placed_value:
+                    is_winner = 'push'
+            elif placed_neg_or_pos == '+':
+                if match_winner_id != match_favorite_id or spread < placed_value:
+                    is_winner = 'win'
+                elif spread == placed_value:
+                    is_winner = 'push'
+                
             await append_result(is_winner)
 
         elif bet_type == 'Moneyline':
@@ -316,3 +316,107 @@ async def handle_bet_payouts(match_id, player1_name, player2_name, match_winner_
         # Rollback in case of an error
         await db.rollback()
         await print(f"An error occurred while recording the match: {e}")
+
+async def get_matchup_data(playerid, db):
+    async with db.execute("""
+        SELECT 
+            CASE WHEN winner_id = ? THEN loser_id ELSE winner_id END AS opponent_id,
+            SUM(CASE WHEN winner_id = ? THEN 1 ELSE 0 END) AS wins_against,
+            SUM(CASE WHEN loser_id = ? THEN 1 ELSE 0 END) AS losses_against,
+            SUM(CASE WHEN winner_id = ? THEN winner_rounds ELSE loser_rounds END) AS rounds_won_against,
+            SUM(CASE WHEN winner_id = ? THEN loser_rounds ELSE 0 END) AS rounds_lost_against, 
+            AVG(CASE WHEN winner_id = ? THEN spread ELSE NULL END) AS avg_winning_spread,   
+            AVG(CASE WHEN loser_id = ? THEN spread ELSE NULL END) AS avg_losing_spread 
+        FROM matches
+        WHERE winner_id = ? OR loser_id = ?
+        GROUP BY opponent_id
+    """, (playerid, playerid, playerid, playerid, playerid, playerid, playerid, playerid, playerid)) as cursor:
+        rows = await cursor.fetchall()
+    
+    return rows
+
+async def get_player_stats(playerid, db):
+    player_cursor = await db.execute("SELECT wins, losses, rounds_won, rounds_lost FROM players WHERE user_id = ?", (playerid,))
+    player = await player_cursor.fetchone()
+
+    async with db.execute('''
+        SELECT 
+            AVG(CASE WHEN winner_id = ? THEN spread ELSE NULL END) AS avg_winning_spread,
+            AVG(CASE WHEN loser_id = ? THEN spread ELSE NULL END) AS avg_losing_spread
+        FROM matches 
+        WHERE winner_id = ? OR loser_id = ?
+    ''', (playerid, playerid, playerid, playerid)) as spread_cursor:
+        player_spread = await spread_cursor.fetchone()
+        
+    return player, player_spread
+
+async def calc_performance_score(playerid, op_id, db):
+        
+        player, player_spread = await get_player_stats(playerid, db)
+
+        total_wins, total_losses, tot_rounds_won, tot_rounds_lost = player
+        avg_winning_spread, avg_losing_spread  = player_spread
+
+        if total_wins == 0 and total_losses == 0:
+            return 10
+
+        avg_winning_spread = player_spread[0] if player_spread[0] is not None else 0
+        avg_losing_spread = player_spread[1] if player_spread[1] is not None else 0
+        
+        tot_matches = total_wins + total_losses
+        tot_rounds = tot_rounds_won + tot_rounds_lost
+
+        tot_win_ratio = total_wins / tot_matches if tot_matches > 0 else 0
+        rounds_won_ratio = tot_rounds_won / tot_rounds if tot_rounds > 0 else 0
+        
+        winning_spread_ratio = avg_winning_spread / 10 if avg_winning_spread > 0 else 0
+        losing_spread_ratio = avg_losing_spread / 10 if avg_losing_spread > 0 else 0
+
+        match_stabilization = tot_matches / (tot_matches + 10)
+        
+        W1, W2, W3, W4, W5 = 50, 20, 10, 15, 5
+
+        performance_score = (
+            (W1 * tot_win_ratio) +
+            (W2 * winning_spread_ratio) -
+            (W3 * losing_spread_ratio) +
+            (W4 * rounds_won_ratio) +
+            (W5 * match_stabilization)
+        )
+        
+        rows = await get_matchup_data(playerid, db)
+        
+        if rows:
+            for row in rows:
+                opponent_id, wins, losses, rounds_won, rounds_lost, avg_win_spread_v_op, avg_loss_spread_v_op = row
+                if opponent_id == op_id:
+                    tot_op_matches = wins + losses
+                    tot_op_rounds = rounds_won + rounds_lost
+
+                    avg_win_spread_v_op = avg_win_spread_v_op if avg_win_spread_v_op is not None else 0
+                    avg_loss_spread_v_op = avg_loss_spread_v_op if avg_loss_spread_v_op is not None else 0
+
+                    win_ratio_v_op = wins / tot_op_matches if tot_op_matches > 0 else 0
+                    round_ratio_v_op = rounds_won / tot_op_rounds if tot_op_rounds > 0 else 0
+                    
+                    winning_spread_ratio_v_op = avg_win_spread_v_op / 10
+                    losing_spread_ratio_v_op = avg_loss_spread_v_op / 10
+
+                    match_stabilization_v_op = tot_op_matches / (tot_op_matches + 10)
+
+                    W6, W7, W8, W9, W10 = 50, 20, 10, 15, 5
+                    
+                    performance_score = performance_score + (
+                        (W6 * win_ratio_v_op) +
+                        (W7 * winning_spread_ratio_v_op) -
+                        (W8 * losing_spread_ratio_v_op) +
+                        (W9 * round_ratio_v_op) +
+                        (W10 * match_stabilization_v_op)
+                    )
+
+        return performance_score
+
+async def calculate_win_probability(score_a, score_b, scaling_factor=100):
+    probability_a = round(1 / (1 + 10 ** ((score_b - score_a) / scaling_factor)), 2)
+    probability_b = round(1 - probability_a, 2)
+    return probability_a, probability_b
