@@ -16,7 +16,11 @@ class Leaderboard(commands.Cog):
                 SELECT user_id, rank, sp FROM players ORDER BY sp DESC
             """)
             rows = await leaderboard_data.fetchall()
-
+            
+        if not rows:
+            await ctx.send('No Players in Database')
+            return 
+        
         # Group players by rank
         rank_groups = {rank: [] for _, rank in RANKS}  # Initialize all ranks as empty
         for user_id, rank, sp in rows:
