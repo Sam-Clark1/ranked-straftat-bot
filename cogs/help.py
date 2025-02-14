@@ -36,7 +36,12 @@ class Help(commands.Cog):
     - Once time is up, bets will be locked in and no more bets can be made on that matchup till it is played and recorded. 
     - Example: `!bet @Player1 @Player2`
 
-    6. **!help**
+    6. **!slb**
+    - Displays the leaderboard sorted by Strafcoin balance in descending order.
+    - Shows player name and Straftcoin balance.
+    - Example: `!slb`
+
+    7. **!help**
     - Displays this help message.
     - Example: `!help`
     """
