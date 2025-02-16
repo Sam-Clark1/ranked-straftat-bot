@@ -21,43 +21,43 @@ class Record(commands.Cog):
                 await ctx.send("Invalid input dumbass: Cannot record a match against yourself.")
                 return    
 
-            try:
-                winner_sp_change, winner_new_sp, winner_straftcoin_change, winner_new_straftcoins, winner_rank, winner_emoji, loser_sp_change, loser_new_sp, loser_straftcoin_change, loser_new_straftcoins, loser_rank, loser_emoji, spread, total_rounds, match_id = await match_to_db(
-                    winner.id, loser.id, winner_rounds, loser_rounds, db
-                )
-                message = await ctx.send(f"Match recorded:\n"
-                                f"**Winner:** {winner.mention} \n"
-                                f"- SP Gained: +{winner_sp_change}\n"
-                                f"- Total SP: {winner_new_sp}\n"
-                                f"- Rank: **{winner_rank}** {winner_emoji}\n"
-                                f"- Straftcoin Gained: +{winner_straftcoin_change}\n"
-                                f"- Total Straftcoin: {winner_new_straftcoins}\n"
-                                f"**Loser:** {loser.mention} \n"
-                                f"- SP Lost: -{loser_sp_change}\n"
-                                f"- Total SP: {loser_new_sp}\n"
-                                f"- Rank: **{loser_rank}** {loser_emoji}\n"
-                                f"- Straftcoin Gained: +{loser_straftcoin_change}\n"
-                                f"- Total Straftcoin: {loser_new_straftcoins}"
-                                )
+            # try:
+            winner_sp_change, winner_new_sp, winner_straftcoin_change, winner_new_straftcoins, winner_rank, winner_emoji, loser_sp_change, loser_new_sp, loser_straftcoin_change, loser_new_straftcoins, loser_rank, loser_emoji, spread, total_rounds, match_id = await match_to_db(
+                winner.id, loser.id, winner_rounds, loser_rounds, db
+            )
+            message = await ctx.send(f"Match recorded:\n"
+                            f"**Winner:** {winner.mention} \n"
+                            f"- SP Gained: +{winner_sp_change}\n"
+                            f"- Total SP: {winner_new_sp}\n"
+                            f"- Rank: **{winner_rank}** {winner_emoji}\n"
+                            f"- Straftcoin Gained: +{winner_straftcoin_change}\n"
+                            f"- Total Straftcoin: {winner_new_straftcoins}\n"
+                            f"**Loser:** {loser.mention} \n"
+                            f"- SP Lost: -{loser_sp_change}\n"
+                            f"- Total SP: {loser_new_sp}\n"
+                            f"- Rank: **{loser_rank}** {loser_emoji}\n"
+                            f"- Straftcoin Gained: +{loser_straftcoin_change}\n"
+                            f"- Total Straftcoin: {loser_new_straftcoins}"
+                            )
 
-                bet_settlements_message = await handle_bet_payouts(match_id, winner.display_name, loser.display_name, winner.id, spread, total_rounds, db)
+            bet_settlements_message = await handle_bet_payouts(match_id, winner.display_name, loser.display_name, winner.id, spread, total_rounds, db)
+            
+            if bet_settlements_message:
                 
-                if bet_settlements_message:
-                    
-                    thread = await ctx.channel.create_thread(
-                        name=f'Resolved Bets for {winner.display_name} vs. {loser.display_name}',
-                        message=message
-                    )
+                thread = await ctx.channel.create_thread(
+                    name=f'Resolved Bets for {winner.display_name} vs. {loser.display_name}',
+                    message=message
+                )
 
-                    await thread.send(f'**Spread**: {spread}\n**Total Rounds**: {total_rounds}')    
+                await thread.send(f'**Spread**: {spread}\n**Total Rounds**: {total_rounds}')    
 
-                    await thread.send(bet_settlements_message)
+                await thread.send(bet_settlements_message)
 
-                await train_models('spread', db)
-                # await train_models('total_rounds', db)
+            await train_models('spread', db)
+            # await train_models('total_rounds', db)
 
-            except Exception as e:
-                await ctx.send(f"An error occurred while recording the match: {e}")
+            # except Exception as e:
+            #     await ctx.send(f"An error occurred while recording the match: {e}")
 
 async def setup(bot):
     await bot.add_cog(Record(bot))

@@ -24,7 +24,9 @@ async def on_ready():
             losses INTEGER DEFAULT 0,
             rounds_won INTEGER DEFAULT 0,
             rounds_lost INTEGER DEFAULT 0, 
-            straftcoins INTEGER DEFAULT 1000
+            straftcoins INTEGER DEFAULT 1000,
+            highest_rank_achieved TEXT DEFAULT 'Shitterton',
+            highest_sp_achieved INTEGER DEFAULT 0
         )
         """)
         await db.execute("""

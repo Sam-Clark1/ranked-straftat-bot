@@ -68,6 +68,18 @@ async def get_straftcoin(db, user_id):
     row = await cursor.fetchone()
     return row[0] if row else 1000
 
+#get current highest rank achieved for specific player
+async def get_highest_rank_achieved(db, user_id):
+    cursor = await db.execute("SELECT highest_rank_achieved FROM players WHERE user_id = ?", (user_id,))
+    row = await cursor.fetchone()
+    return row[0] if row else 'Shitterton'
+
+#get current highest sp achieved for specific player
+async def get_highest_sp_achieved(db, user_id):
+    cursor = await db.execute("SELECT highest_sp_achieved FROM players WHERE user_id = ?", (user_id,))
+    row = await cursor.fetchone()
+    return row[0] if row else 0
+
 async def get_players(db):
     async with db.execute("SELECT user_id, straftcoins FROM players") as cursor:
         players = await cursor.fetchall()
@@ -194,11 +206,20 @@ async def add_player_to_db(player_id, player_new_rating, player_new_sp, player_r
         winr_or_lsr_rounds = [loser_rounds, winner_rounds]
         outcome_table_identifier = 'losses'
     
+    current_highest_rank_achieved = await get_highest_rank_achieved(db, player_id)
+    current_highest_sp_achieved = await get_highest_sp_achieved(db, player_id)
+    
+    if player_new_sp > current_highest_sp_achieved:
+        current_highest_rank_achieved = player_rank
+        current_highest_sp_achieved = player_new_sp
+
     variables = (player_new_rating, player_new_sp, 
                  player_rank, 
                  winr_or_lsr_rounds[0], 
                  winr_or_lsr_rounds[1], 
                  player_new_straftcoins,
+                 current_highest_rank_achieved,
+                 current_highest_sp_achieved,
                  player_id)
     
     await db.execute(f"""
@@ -209,7 +230,9 @@ async def add_player_to_db(player_id, player_new_rating, player_new_sp, player_r
         {outcome_table_identifier} = {outcome_table_identifier} + 1,
         rounds_won = rounds_won + ?,
         rounds_lost = rounds_lost + ?,
-        straftcoins = ?
+        straftcoins = ?,
+        highest_rank_achieved = ?,
+        highest_sp_achieved = ?
         WHERE user_id = ?                 
     """, variables)
     

@@ -13,7 +13,7 @@ async def fetch_data(db):
                                                 'total_rounds', 'winner_straftcoin_change', 'loser_straftcoin_change'])
     
     players_df = pd.DataFrame(players, columns=["user_id", "rating", "sp", "rank", "wins", "losses", 
-                                                "rounds_won", "rounds_lost", 'straftcoins'])
+                                                "rounds_won", "rounds_lost", 'straftcoins', 'highest_rank_achieved', 'highest_sp_achieved'])
     return matches_df, players_df
 
 async def prepare_features(matches_df_init, players_df_init, predicted_variable):
