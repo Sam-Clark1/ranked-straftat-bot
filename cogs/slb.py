@@ -9,7 +9,7 @@ class StraftcoinLB(commands.Cog):
 
     @commands.command()
     async def slb(self, ctx):
-        rank_emote = await get_emoji(['Straftcoin'])
+        stratcoin_emote = await get_emoji(['Straftcoin'])
 
         async with aiosqlite.connect("rankings.db") as db:
             leaderboard_data = await db.execute("""
@@ -34,7 +34,7 @@ class StraftcoinLB(commands.Cog):
         for user_id, straftcoin in rows:
             username = await get_display_name(ctx, user_id)
             
-            leaderboard_message_body += f"- {username}: {straftcoin}{rank_emote[0]}\n"
+            leaderboard_message_body += f"- {username}: {straftcoin}{stratcoin_emote[0]}\n"
 
         await thread.send(leaderboard_message_body)
 

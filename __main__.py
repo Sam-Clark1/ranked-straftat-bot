@@ -19,13 +19,13 @@ async def on_ready():
             user_id INTEGER PRIMARY KEY,
             rating INTEGER DEFAULT 1000,
             sp INTEGER DEFAULT 0,
-            rank TEXT DEFAULT 'Shitterton',
+            rank TEXT DEFAULT 'Shitterton IV',
             wins INTEGER DEFAULT 0,
             losses INTEGER DEFAULT 0,
             rounds_won INTEGER DEFAULT 0,
             rounds_lost INTEGER DEFAULT 0, 
             straftcoins INTEGER DEFAULT 1000,
-            highest_rank_achieved TEXT DEFAULT 'Shitterton',
+            highest_rank_achieved TEXT DEFAULT 'Shitterton IV',
             highest_sp_achieved INTEGER DEFAULT 0
         )
         """)

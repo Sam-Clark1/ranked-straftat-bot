@@ -20,7 +20,7 @@ class Stats(commands.Cog):
                 await ctx.send(f"No stats available for {player.mention}.")
                 return
 
-            rating, sp, rank, wins, losses, rounds_won, rounds_lost, straftcoins, highest_rank_achieved, highest_sp_achieved = player_data
+            rating, sp, rank, wins, losses, rounds_won, rounds_lost, straftcoins, highest_rank_achieved, _ = player_data
             total_matches = wins + losses
             total_rounds = rounds_won + rounds_lost
             match_win_percentage = (wins / total_matches) * 100 if total_matches > 0 else 0
@@ -43,7 +43,6 @@ class Stats(commands.Cog):
             f"Round Win Percentage: {round_win_percentage:.2f}%\n"
             f"Straftcoin Balance: {straftcoins}{emojis[1]}\n"
             f"Highest Rank Achieved: {highest_rank_achieved}{emojis[2]}\n"
-            f"Highest SP Achieved: {highest_sp_achieved}\n"
         )
 
 async def setup(bot):

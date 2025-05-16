@@ -2,14 +2,41 @@ from datetime import datetime
 
 #get ranks based on sp number
 async def get_ranks():
+    # RANKS = [
+    #     (0, "Shitterton"),
+    #     (500, "Bronze"),
+    #     (1000, "Silver"),
+    #     (1500, "Gold"),
+    #     (2000, "Platinum"),
+    #     (2500, "Diamond"),
+    #     (3000, "Daddy")
+    # ]
     RANKS = [
-        (0, "Shitterton"),
-        (500, "Bronze"),
-        (1000, "Silver"),
-        (1500, "Gold"),
-        (2000, "Platinum"),
-        (2500, "Diamond"),
-        (3000, "Daddy")
+        (0, "Shitterton IV"),
+        (200, "Shitterton III"),
+        (400, "Shitterton II"),
+        (600, "Shitterton I"),
+        (800, "Bronze IV"),
+        (1000, "Bronze III"),
+        (1200, "Bronze II"),
+        (1400, "Bronze I"),
+        (1600, "Silver IV"),
+        (1800, "Silver III"),
+        (2000, "Silver II"),
+        (2200, "Silver I"),
+        (2400, "Gold IV"),
+        (2600, "Gold III"),
+        (2800, "Gold II"),
+        (3000, "Gold I"),
+        (3200, "Platinum IV"),
+        (3400, "Platinum III"),
+        (3600, "Platinum II"),
+        (3800, "Platinum I"),
+        (4000, "Diamond IV"),
+        (4200, "Diamond III"),
+        (4400, "Diamond II"),
+        (4600, "Diamond I"),
+        (4800, "Daddy")
     ]
     return RANKS
 
@@ -30,7 +57,8 @@ async def get_emoji(desired_emoji_names):
     
     emojis_list = []
     for emoji_name in desired_emoji_names:
-        emoji = EMOJIS.get(emoji_name) 
+        emoji_name_base = emoji_name.split()
+        emoji = EMOJIS.get(emoji_name_base[0]) 
         emojis_list.append(emoji)
 
     return emojis_list
@@ -42,7 +70,7 @@ async def get_rank(sp):
         if sp >= threshold:
             rank_emote = await get_emoji([rank])
             return rank, rank_emote[0]
-    return "Shitterton"
+    return "Shitterton IV"
 
 #get server specific display names of players from their user id
 async def get_display_name(ctx, user_id):
@@ -72,7 +100,7 @@ async def get_straftcoin(db, user_id):
 async def get_highest_rank_achieved(db, user_id):
     cursor = await db.execute("SELECT highest_rank_achieved FROM players WHERE user_id = ?", (user_id,))
     row = await cursor.fetchone()
-    return row[0] if row else 'Shitterton'
+    return row[0] if row else 'Shitterton IV'
 
 #get current highest sp achieved for specific player
 async def get_highest_sp_achieved(db, user_id):
@@ -118,9 +146,9 @@ async def handle_inputted_players(players, db):
 
 # Calculate Elo change
 async def calculate_elo(winner_rounds, loser_rounds, rating1, rating2):
-    K_FACTOR = 100  # Elo constant
+    K_FACTOR = 80  # Elo constant
     round_ratio = (winner_rounds - loser_rounds) / 10
-    round_adjustment = (K_FACTOR/5)*round_ratio
+    round_adjustment = (K_FACTOR/4)*round_ratio
 
     winner_expected_score = 1 / (1 + 10 ** ((rating2 - rating1) / 400))
     loser_expected_score = 1 / (1 + 10 ** ((rating1 - rating2) / 400))
@@ -139,8 +167,8 @@ async def calculate_sp_changes(winner_rating, loser_rating, winner_rounds, loser
     round_ratio = (winner_rounds - loser_rounds) / 10  # Normalize to a scale of -1 to 1
     
     thresholds = [
-    (0.95, 110), (0.85, 120), (0.80, 140), (0.70, 160), (0.65, 160), (0.60, 170), 
-    (0.55, 180), (0.50, 200), (0.40, 200), (0.30, 200), (0.20, 200), 
+    (0.95, 100), (0.85, 110), (0.80, 120), (0.70, 120), (0.65, 120), (0.60, 130), 
+    (0.55, 130), (0.50, 150), (0.40, 150), (0.30, 160), (0.20, 200), 
     (0.10, 200)
     ]
 

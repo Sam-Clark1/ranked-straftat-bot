@@ -19,7 +19,7 @@ class Dumb(commands.Cog):
             
             # Hardcoded list of player IDs (replace these with actual Discord user IDs)
             # player_ids = [1321317232797810749, 946593018226540545, 947655647955140659]
-            player_ids = [946593018226540545, 947655647955140659]
+            player_ids = [141371022938079233, 946593018226540545, 947655647955140659, 1321317232797810749]
 
             # Randomize matches between players
             matches_to_create = 10  # Number of dummy matches to generate
