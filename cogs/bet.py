@@ -70,6 +70,12 @@ class Bet(commands.Cog):
            
             if player1_played_true and player2_played_true:
                 predicted_spread = await predict_variable(favorite[2], underdog[2], 'spread', db)
+
+                if predicted_spread <= 1:
+                    predicted_spread = 1.5
+                elif predicted_spread >= 9:
+                    predicted_spread = 8.5
+
                 # predicted_ou = await predict_variable(player1_info[2], player2_info[2], 'total_rounds', db)
             elif player1_played_true or player2_played_true:
                 predicted_spread = 6.5
