@@ -1,8 +1,0 @@
-/__pycache__
-/cogs/__pycache__
-*.pyc
-.env
-rankings.db
-spread_model.booster
-temp.py
-/cogs/dumb.py
