@@ -30,54 +30,53 @@ async def on_ready():
         )
         """)
         await db.execute("""
-        CREATE TABLE IF NOT EXISTS matches (
-            match_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            winner_id INTEGER,
-            loser_id INTEGER,
-            winner_rounds INTEGER,
-            loser_rounds INTEGER,
-            winner_elo_change INTEGER,
-            loser_elo_change INTEGER,
-            winner_sp_change INTEGER,
-            loser_sp_change INTEGER,
-            timestamp TEXT,
-            outcome INTEGER,
-            spread INTEGER, 
-            total_rounds INTEGER, 
-            winner_straftcoin_change INTEGER,
-            loser_straftcoin_change INTEGER
+        CREATE TABLE matches (
+            match_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            rounds_to_win   INTEGER NOT NULL,
+            total_rounds    INTEGER NOT NULL,
+            date           TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """)
         await db.execute('''
-            CREATE TABLE IF NOT EXISTS live_bets (
-            bet_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            match_title TEXT NOT NULL,
-            match_favorite_id INTEGER NOT NULL,
-            match_underdog_id INTEGER NOT NULL,
-            playerid_bet_on INTEGER NOT NULL,
-            bet_type TEXT NOT NULL,
-            bet_value TEXT NOT NULL,
-            bet_odds INTEGER NOT NULL,
-            bet_amount INTEGER NOT NULL
+        CREATE TABLE match_participants (
+            participant_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            match_id            INTEGER NOT NULL,
+            player_id           INTEGER NOT NULL,
+            placement           INTEGER NOT NULL,  -- 1 = winner, 2 = 2nd, etc.
+            rounds_won          INTEGER NOT NULL,
+            elo_change          REAL NOT NULL,
+            sp_change           INTEGER NOT NULL,
+            straftcoin_change   INTEGER NOT NULL,
+            FOREIGN KEY (match_id) REFERENCES matches(match_id),
+            FOREIGN KEY (player_id) REFERENCES players(user_id)
         )
         ''')
         await db.execute('''
-            CREATE TABLE IF NOT EXISTS past_bets (
-            bet_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            match_id INTEGER NOT NULL,
-            match_title TEXT NOT NULL,
-            match_favorite_id INTEGER NOT NULL,
-            match_underdog_id INTEGER NOT NULL,
-            playerid_bet_on INTEGER NOT NULL,
-            bet_type TEXT NOT NULL,
-            bet_value TEXT NOT NULL,
-            bet_odds INTEGER NOT NULL,
-            bet_amount INTEGER NOT NULL,
-            bet_outcome TEXT NOT NULL,
-            amount_won INTEGER NOT NULL,
-            amount_lost INTEGER NOT NULL
+            CREATE TABLE live_bets (
+            bet_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id         INTEGER NOT NULL,
+            match_title     TEXT NOT NULL,
+            player_bet_on_id INTEGER,          -- NULL for O/U bets
+            bet_type        TEXT NOT NULL,     -- 'moneyline', 'over', 'under'
+            bet_value       TEXT NOT NULL,
+            bet_odds        INTEGER NOT NULL,
+            bet_amount      INTEGER NOT NULL
+        )
+        ''')
+        await db.execute('''
+            CREATE TABLE past_bets (
+            bet_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id         INTEGER NOT NULL,
+            match_id        INTEGER NOT NULL,
+            match_title     TEXT NOT NULL,
+            player_bet_on_id INTEGER,
+            bet_type        TEXT NOT NULL,
+            bet_value       TEXT NOT NULL,
+            bet_odds        INTEGER NOT NULL,
+            bet_amount      INTEGER NOT NULL,
+            result          TEXT NOT NULL,     -- 'win' or 'loss'
+            amount_won      INTEGER NOT NULL,
+            FOREIGN KEY (match_id) REFERENCES matches(match_id)
         )
         ''')
         await db.commit()
