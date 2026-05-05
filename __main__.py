@@ -10,10 +10,10 @@ intents.messages = True
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
-# Initialize database
 @bot.event
 async def on_ready():
     async with aiosqlite.connect("rankings.db") as db:
+
         await db.execute("""
         CREATE TABLE IF NOT EXISTS players (
             user_id             INTEGER PRIMARY KEY,
@@ -38,6 +38,7 @@ async def on_ready():
             straftcoins         INTEGER DEFAULT 1000
         )
         """)
+
         await db.execute("""
         CREATE TABLE IF NOT EXISTS matches (
             match_id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,6 +48,7 @@ async def on_ready():
             date            TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """)
+
         await db.execute("""
         CREATE TABLE IF NOT EXISTS match_participants (
             participant_id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,17 +63,37 @@ async def on_ready():
             FOREIGN KEY (player_id) REFERENCES players(user_id)
         )
         """)
+
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS parlays (
+            parlay_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id             INTEGER NOT NULL,
+            match_title         TEXT NOT NULL,
+            total_stake         INTEGER NOT NULL,
+            num_legs            INTEGER NOT NULL,
+            combined_multiplier REAL NOT NULL,
+            status              TEXT DEFAULT 'live',
+            payout              INTEGER DEFAULT 0,
+            FOREIGN KEY (user_id) REFERENCES players(user_id)
+        )
+        """)
+
         await db.execute("""
         CREATE TABLE IF NOT EXISTS live_bets (
             bet_id              INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id             INTEGER NOT NULL,
             match_title         TEXT NOT NULL,
             player_bet_on_id    INTEGER,
+            player_b_id         INTEGER,
             bet_type            TEXT NOT NULL,
+            bet_value           TEXT NOT NULL,
             bet_odds            INTEGER NOT NULL,
-            bet_amount          INTEGER NOT NULL
+            bet_amount          INTEGER NOT NULL,
+            parlay_id           INTEGER,
+            FOREIGN KEY (parlay_id) REFERENCES parlays(parlay_id)
         )
         """)
+
         await db.execute("""
         CREATE TABLE IF NOT EXISTS past_bets (
             bet_id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,15 +101,19 @@ async def on_ready():
             match_id            INTEGER NOT NULL,
             match_title         TEXT NOT NULL,
             player_bet_on_id    INTEGER,
+            player_b_id         INTEGER,
             bet_type            TEXT NOT NULL,
             bet_value           TEXT NOT NULL,
             bet_odds            INTEGER NOT NULL,
             bet_amount          INTEGER NOT NULL,
             result              TEXT NOT NULL,
             amount_won          INTEGER NOT NULL,
-            FOREIGN KEY (match_id) REFERENCES matches(match_id)
+            parlay_id           INTEGER,
+            FOREIGN KEY (match_id) REFERENCES matches(match_id),
+            FOREIGN KEY (parlay_id) REFERENCES parlays(parlay_id)
         )
         """)
+
         await db.commit()
 
     try:
@@ -97,7 +123,7 @@ async def on_ready():
             if filename.endswith(".py"):
                 await bot.load_extension(f"cogs.{filename[:-3]}")
     except Exception as e:
-        print(f"Failed to load cog 'record': {e}")
+        print(f"Failed to load cog: {e}")
 
     print(f'{bot.user} is online and ready!')
 
