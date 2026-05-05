@@ -22,9 +22,12 @@ class Undo(commands.Cog):
 
         async with aiosqlite.connect("rankings.db") as db:
 
-            # --- GET LATEST MATCH ---
+            # ----------------------------------------------------------------
+            # GET LATEST MATCH
+            # ----------------------------------------------------------------
             match_row = await db.execute(
-                "SELECT match_id, total_rounds, game_mode FROM matches ORDER BY match_id DESC LIMIT 1"
+                "SELECT match_id, total_rounds, game_mode "
+                "FROM matches ORDER BY match_id DESC LIMIT 1"
             )
             match = await match_row.fetchone()
 
@@ -34,9 +37,12 @@ class Undo(commands.Cog):
 
             match_id, total_rounds, game_mode = match
 
-            # --- GET ALL PARTICIPANTS ---
+            # ----------------------------------------------------------------
+            # GET ALL PARTICIPANTS
+            # ----------------------------------------------------------------
             async with db.execute("""
-                SELECT player_id, placement, rounds_won, elo_change, sp_change, straftcoin_change
+                SELECT player_id, placement, rounds_won,
+                       elo_change, sp_change, straftcoin_change
                 FROM match_participants
                 WHERE match_id = ?
                 ORDER BY placement ASC
@@ -44,10 +50,15 @@ class Undo(commands.Cog):
                 participants = await cursor.fetchall()
 
             if not participants:
-                await ctx.send("Match found but no participants on record. Database may be inconsistent.")
+                await ctx.send(
+                    "Match found but no participants on record. "
+                    "Database may be inconsistent."
+                )
                 return
 
-            # --- SET COLUMN NAMES BASED ON MODE ---
+            # ----------------------------------------------------------------
+            # MODE-SPECIFIC COLUMN NAMES
+            # ----------------------------------------------------------------
             if game_mode == '1v1':
                 sp_col     = 'sp_1v1'
                 rating_col = 'rating_1v1'
@@ -65,8 +76,11 @@ class Undo(commands.Cog):
                 rw_col     = 'rounds_won_mp'
                 rl_col     = 'rounds_lost_mp'
 
-            # --- REVERSE EACH PARTICIPANT ---
-            for player_id, placement, rounds_won, elo_change, sp_change, straftcoin_change in participants:
+            # ----------------------------------------------------------------
+            # REVERSE EACH PARTICIPANT'S STATS
+            # ----------------------------------------------------------------
+            for (player_id, placement, rounds_won,
+                 elo_change, sp_change, straftcoin_change) in participants:
 
                 current_sp   = await get_sp(db, player_id, mode=game_mode)
                 restored_sp  = max(0, current_sp - sp_change)
@@ -80,10 +94,10 @@ class Undo(commands.Cog):
                         {rating_col} = {rating_col} - ?,
                         {sp_col}     = ?,
                         {rank_col}   = ?,
-                        {wins_col}   = {wins_col} - ?,
+                        {wins_col}   = {wins_col}   - ?,
                         {losses_col} = {losses_col} - ?,
-                        {rw_col}     = {rw_col} - ?,
-                        {rl_col}     = {rl_col} - ?,
+                        {rw_col}     = {rw_col}     - ?,
+                        {rl_col}     = {rl_col}     - ?,
                         straftcoins  = MAX(0, straftcoins - ?)
                     WHERE user_id = ?
                 """, (
@@ -98,40 +112,131 @@ class Undo(commands.Cog):
                     player_id
                 ))
 
-            # --- REVERSE BETS ---
+            # ----------------------------------------------------------------
+            # REVERSE BETS
+            # ----------------------------------------------------------------
             async with db.execute(
                 "SELECT * FROM past_bets WHERE match_id = ?", (match_id,)
             ) as cursor:
                 past_bets = await cursor.fetchall()
 
             if past_bets:
-                for bet in past_bets:
-                    bet_id, user_id, _, match_title, player_bet_on_id, bet_type, bet_value, bet_odds, bet_amount, result, amount_won = bet
+                # Track which parlay IDs we've already processed so we don't
+                # double-claw parlay payouts if multiple legs are in the same match
+                processed_parlay_ids = set()
 
-                    # Claw back the payout
+                for bet in past_bets:
+                    (bet_id, user_id, _, match_title,
+                     player_bet_on_id, player_b_id,
+                     bet_type, bet_value, bet_odds, bet_amount,
+                     result, amount_won, parlay_id) = bet
+
+                    if parlay_id is not None:
+                        # ── PARLAY LEG ──────────────────────────────────────
+                        if parlay_id not in processed_parlay_ids:
+                            processed_parlay_ids.add(parlay_id)
+
+                            async with db.execute(
+                                "SELECT user_id, status, payout "
+                                "FROM parlays WHERE parlay_id = ?",
+                                (parlay_id,)
+                            ) as cursor:
+                                parlay_row = await cursor.fetchone()
+
+                            if parlay_row:
+                                p_user_id, p_status, p_payout = parlay_row
+
+                                # Claw back payout only if the parlay won
+                                if p_status == 'won' and p_payout > 0:
+                                    await db.execute(
+                                        "UPDATE players SET "
+                                        "straftcoins = MAX(0, straftcoins - ?) "
+                                        "WHERE user_id = ?",
+                                        (p_payout, p_user_id)
+                                    )
+
+                                # Reset parlay to live so it re-settles on re-record
+                                await db.execute(
+                                    "UPDATE parlays SET status = 'live', payout = 0 "
+                                    "WHERE parlay_id = ?",
+                                    (parlay_id,)
+                                )
+
+                        # Restore leg to live_bets with parlay_id intact
+                        await db.execute("""
+                            INSERT INTO live_bets
+                                (user_id, match_title,
+                                 player_bet_on_id, player_b_id,
+                                 bet_type, bet_value, bet_odds,
+                                 bet_amount, parlay_id)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            user_id, match_title,
+                            player_bet_on_id, player_b_id,
+                            bet_type, bet_value, bet_odds,
+                            bet_amount, parlay_id
+                        ))
+
+                    else:
+                        # ── SINGLE BET ───────────────────────────────────────
+                        if result == 'win':
+                            # Claw back the payout that was credited at settlement
+                            await db.execute(
+                                "UPDATE players SET "
+                                "straftcoins = MAX(0, straftcoins - ?) "
+                                "WHERE user_id = ?",
+                                (amount_won, user_id)
+                            )
+                        elif result == 'push':
+                            # Claw back the stake refund that was credited
+                            await db.execute(
+                                "UPDATE players SET "
+                                "straftcoins = MAX(0, straftcoins - ?) "
+                                "WHERE user_id = ?",
+                                (bet_amount, user_id)
+                            )
+                        # result == 'loss': nothing to claw back, stake stays deducted
+
+                        # Restore bet to live_bets
+                        await db.execute("""
+                            INSERT INTO live_bets
+                                (user_id, match_title,
+                                 player_bet_on_id, player_b_id,
+                                 bet_type, bet_value, bet_odds,
+                                 bet_amount, parlay_id)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+                        """, (
+                            user_id, match_title,
+                            player_bet_on_id, player_b_id,
+                            bet_type, bet_value, bet_odds,
+                            bet_amount
+                        ))
+
                     await db.execute(
-                        "UPDATE players SET straftcoins = MAX(0, straftcoins - ?) WHERE user_id = ?",
-                        (amount_won, user_id)
+                        "DELETE FROM past_bets WHERE bet_id = ?", (bet_id,)
                     )
 
-                    # Restore to live_bets so it re-settles when match is re-recorded
-                    await db.execute("""
-                        INSERT INTO live_bets
-                            (user_id, match_title, player_bet_on_id, bet_type, bet_value, bet_odds, bet_amount)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (user_id, match_title, player_bet_on_id, bet_type, bet_value, bet_odds, bet_amount))
-
-                    await db.execute("DELETE FROM past_bets WHERE bet_id = ?", (bet_id,))
-
-            # --- DELETE MATCH RECORDS ---
-            await db.execute("DELETE FROM match_participants WHERE match_id = ?", (match_id,))
-            await db.execute("DELETE FROM matches WHERE match_id = ?", (match_id,))
+            # ----------------------------------------------------------------
+            # DELETE MATCH RECORDS
+            # ----------------------------------------------------------------
+            await db.execute(
+                "DELETE FROM match_participants WHERE match_id = ?", (match_id,)
+            )
+            await db.execute(
+                "DELETE FROM matches WHERE match_id = ?", (match_id,)
+            )
             await db.commit()
 
-        # --- CONFIRMATION ---
+        # ----------------------------------------------------------------
+        # CONFIRMATION
+        # ----------------------------------------------------------------
         mode_label = '1v1' if game_mode == '1v1' else 'Multiplayer'
-        participant_mentions = " vs ".join(f"<@{pid}>" for pid, *_ in participants)
-        await ctx.send(f"**{mode_label}** match ({participant_mentions}) has been undone!")
+        participant_mentions = " vs ".join(
+            f"<@{pid}>" for pid, *_ in participants
+        )
+        await ctx.send(
+            f"**{mode_label}** match ({participant_mentions}) has been undone!"
+        )
 
 
 async def setup(bot):

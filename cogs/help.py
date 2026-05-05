@@ -6,57 +6,59 @@ class Help(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # Help command
     @commands.command()
     async def help(self, ctx):
         emojis = await get_emoji(['Straftcoin'])
 
         help_message_str = f"""
-    1. **!record <winner> <loser> <winner_rounds> <loser_rounds>**
-    - Records the result of a match.
-    - Example: `!record @Player1 @Player2 10 6`
-    - Note: Matches must end with one player winning exactly 10 rounds.
+1. **!record <rounds_to_win> <@Player> <rounds> <@Player> <rounds> ...**
+   - Records the result of a match (1v1 or up to 10 players).
+   - Exactly one player must have `rounds_to_win` rounds.
+   - 1v1 example: `!record 10 @Player1 10 @Player2 6`
+   - MP example: `!record 10 @Player1 10 @Player2 7 @Player3 4`
 
-    2. **!stats <player>**
-    - Shows the statistics for a specific player.
-    - Example: `!stats @Player1`
+2. **!stats <@player>**
+   - Shows 1v1 and Multiplayer stats for a player separately.
+   - Example: `!stats @Player1`
 
-    3. **!lb**
-    - Displays the leaderboard for 1v1 matches sorted by SP in descending order.
-    - Shows player name, rank, and SP.
-    - Example: `!lb`
+3. **!lb**
+   - Displays the 1v1 leaderboard sorted by SP.
+   - Example: `!lb`
 
-    4. **!matchstats <player>**
-    - Shows match history stats for a specific player.
-    - Example: `!matchstats @Player1`
+4. **!mlb**
+   - Displays the Multiplayer leaderboard sorted by SP.
+   - Example: `!mlb`
 
-    5. **!bet <player1> <player2>**
-    - Shows odds for the Spread, Moneyline, and Over/Under for these two players against each other.
-    - Allows you to bet on those odds with Straftcoin{emojis[0]} during a 5 minute period.
-    - Once time is up, bets will be locked in and no more bets can be made on that matchup till it is played and recorded. 
-    - Example: `!bet @Player1 @Player2`
+5. **!matchstats <@player>**
+   - Shows head-to-head history against each opponent.
+   - Example: `!matchstats @Player1`
 
-    6. **!slb**
-    - Displays the leaderboard sorted by Strafcoin balance in descending order.
-    - Shows player name and Straftcoin balance.
-    - Example: `!slb`
+6. **!bet <rounds_to_win> <@Player1> <@Player2> ...**
+   - Opens a 2-minute betting window for an upcoming match.
+   - Generates odds for Moneyline, Spread (1v1), Head-to-Head, Podium, Last Place, and O/U bets based on player count.
+   - **Single bet**: type the bet label and stake — e.g. `A 100`
+   - **Parlay**: type P, the labels, then the stake — e.g. `P A C 100`
+   - Players in the match can only bet on their own positive outcomes.
+   - Everyone starts with 1000 {emojis[0]} if they have no account.
+   - Example: `!bet 10 @Player1 @Player2`
 
-    7. **!mlb**
-    - Displays the leaderboard for Multiplayer (3-10 player games) sorted by SP in descending order.
-    - Example: `!mlb`
+7. **!slb**
+   - Displays the Straftcoin leaderboard.
+   - Example: `!slb`
 
-    8. **!help**
-    - Displays this help message.
-    - Example: `!help`
-    """
+8. **!help**
+   - Displays this help message.
+   - Example: `!help`
+"""
         help_message = await ctx.send('**Available Commands**')
-        
+
         thread = await ctx.channel.create_thread(
-            name=f'Available Commands for Ranked Straftat Bot',
+            name='Available Commands for Ranked Straftat Bot',
             message=help_message
         )
 
         await thread.send(help_message_str)
+
 
 async def setup(bot):
     await bot.add_cog(Help(bot))
