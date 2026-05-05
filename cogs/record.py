@@ -12,13 +12,15 @@ class Record(commands.Cog):
     @commands.command()
     async def record(self, ctx, rounds_to_win: int, *args):
         """
-        Usage: !record <rounds_to_win> @Player1 <rounds> @Player2 <rounds> ...
-        Example (1v1): !record 10 @Raf 10 @Dom 7
-        Example (MP):  !record 10 @Raf 10 @Dom 7 @Jake 4
+        Usage : !record <rounds_to_win> @Player1 <rounds> @Player2 <rounds> ...
+        1v1   : !record 10 @Raf 10 @Dom 7
+        MP    : !record 10 @Raf 10 @Dom 7 @Jake 4
         """
         async with aiosqlite.connect("rankings.db") as db:
 
-            # --- PARSING ---
+            # ----------------------------------------------------------------
+            # PARSING
+            # ----------------------------------------------------------------
             if len(args) < 4:
                 await ctx.send(
                     "Invalid input: Need at least 2 players.\n"
@@ -27,7 +29,9 @@ class Record(commands.Cog):
                 return
 
             if len(args) % 2 != 0:
-                await ctx.send("Invalid input: Every player needs a corresponding round count.")
+                await ctx.send(
+                    "Invalid input: Every player needs a corresponding round count."
+                )
                 return
 
             player_rounds = []
@@ -38,15 +42,20 @@ class Record(commands.Cog):
                 except commands.BadArgument:
                     await ctx.send(f"Invalid input: Could not find player `{args[i]}`.")
                     return
+
                 try:
                     rounds = int(args[i + 1])
                 except ValueError:
-                    await ctx.send(f"Invalid input: `{args[i + 1]}` is not a valid round count.")
+                    await ctx.send(
+                        f"Invalid input: `{args[i + 1]}` is not a valid round count."
+                    )
                     return
 
                 player_rounds.append((member, rounds))
 
-            # --- VALIDATION ---
+            # ----------------------------------------------------------------
+            # VALIDATION
+            # ----------------------------------------------------------------
             if len(player_rounds) > 10:
                 await ctx.send("Invalid input: Maximum of 10 players per match.")
                 return
@@ -65,21 +74,26 @@ class Record(commands.Cog):
                 return
 
             if any(r > rounds_to_win for _, r in player_rounds):
-                await ctx.send(f"Invalid input: No player can have more than {rounds_to_win} rounds.")
+                await ctx.send(
+                    f"Invalid input: No player can have more than {rounds_to_win} rounds."
+                )
                 return
 
             winners = [(m, r) for m, r in player_rounds if r == rounds_to_win]
             if len(winners) == 0:
-                await ctx.send(f"Invalid input: Exactly one player must have {rounds_to_win} rounds.")
+                await ctx.send(
+                    f"Invalid input: Exactly one player must have {rounds_to_win} rounds."
+                )
                 return
             if len(winners) > 1:
-                await ctx.send(f"Invalid input: Only one player can have {rounds_to_win} rounds.")
+                await ctx.send(
+                    f"Invalid input: Only one player can have {rounds_to_win} rounds."
+                )
                 return
 
-            # --- MODE DETECTION ---
-            game_mode = '1v1' if len(player_rounds) == 2 else 'mp'
-
-            # --- RECORD ---
+            # ----------------------------------------------------------------
+            # RECORD
+            # ----------------------------------------------------------------
             try:
                 results = await match_to_db(
                     [(m.id, r) for m, r in player_rounds],
@@ -90,13 +104,16 @@ class Record(commands.Cog):
                 await ctx.send(f"An error occurred while recording the match: {e}")
                 return
 
-            # --- BUILD OUTPUT ---
+            # ----------------------------------------------------------------
+            # BUILD OUTPUT MESSAGE
+            # ----------------------------------------------------------------
             member_lookup = {m.id: m for m, _ in player_rounds}
-            mode_label = '1v1' if game_mode == '1v1' else 'Multiplayer'
+            game_mode     = results[0]['game_mode']
+            mode_label    = '1v1' if game_mode == '1v1' else 'Multiplayer'
 
             match_lines = []
             for r in results:
-                member = member_lookup[r['player_id']]
+                member  = member_lookup[r['player_id']]
                 sp_str  = f"+{r['sp_change']}"  if r['sp_change']  >= 0 else str(r['sp_change'])
                 sc_str  = f"+{r['straftcoin_change']}" if r['straftcoin_change'] >= 0 else str(r['straftcoin_change'])
                 elo_str = f"+{r['elo_change']:.1f}" if r['elo_change'] >= 0 else f"{r['elo_change']:.1f}"
@@ -113,17 +130,17 @@ class Record(commands.Cog):
             )
             message = await ctx.send(message_content)
 
-            # --- BET PAYOUTS ---
-            match_id     = results[0]['match_id']
+            # ----------------------------------------------------------------
+            # BET PAYOUTS
+            # ----------------------------------------------------------------
             winner       = results[0]
             second       = results[1]
-            winner_member = member_lookup[winner['player_id']]
             total_rounds = sum(r['rounds_won'] for r in results)
             spread       = winner['rounds_won'] - second['rounds_won']
-
             participant_ids = [r['player_id'] for r in results]
+
             bet_settlements_message = await handle_bet_payouts(
-                match_id,
+                winner['match_id'],
                 participant_ids,
                 winner['player_id'],
                 spread,
@@ -132,11 +149,15 @@ class Record(commands.Cog):
             )
 
             if bet_settlements_message:
+                winner_member = member_lookup[winner['player_id']]
                 thread = await ctx.channel.create_thread(
                     name=f"Resolved Bets — {winner_member.display_name}'s match",
                     message=message
                 )
-                await thread.send(f"**Spread (1st vs 2nd):** {spread}\n**Total Rounds:** {total_rounds}")
+                await thread.send(
+                    f"**Spread (1st vs 2nd):** {spread}\n"
+                    f"**Total Rounds:** {total_rounds}"
+                )
                 await thread.send(bet_settlements_message)
 
             await train_models('spread', db)
