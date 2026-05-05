@@ -121,9 +121,10 @@ class Record(commands.Cog):
             total_rounds = sum(r['rounds_won'] for r in results)
             spread       = winner['rounds_won'] - second['rounds_won']
 
+            participant_ids = [r['player_id'] for r in results]
             bet_settlements_message = await handle_bet_payouts(
                 match_id,
-                winner_member.display_name,
+                participant_ids,
                 winner['player_id'],
                 spread,
                 total_rounds,

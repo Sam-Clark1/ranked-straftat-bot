@@ -92,18 +92,6 @@ async def get_straftcoin(db, user_id):
     row = await cursor.fetchone()
     return row[0] if row else 1000
 
-#get current highest rank achieved for specific player
-async def get_highest_rank_achieved(db, user_id):
-    cursor = await db.execute("SELECT highest_rank_achieved FROM players WHERE user_id = ?", (user_id,))
-    row = await cursor.fetchone()
-    return row[0] if row else 'Shitterton IV'
-
-#get current highest sp achieved for specific player
-async def get_highest_sp_achieved(db, user_id):
-    cursor = await db.execute("SELECT highest_sp_achieved FROM players WHERE user_id = ?", (user_id,))
-    row = await cursor.fetchone()
-    return row[0] if row else 0
-
 async def get_players(db):
     async with db.execute("SELECT user_id, straftcoins FROM players") as cursor:
         players = await cursor.fetchall()
@@ -114,16 +102,12 @@ async def get_players(db):
     return players
 
 async def get_player_matches(db, user_id):
-    player_wins_cursor = await db.execute("SELECT * FROM matches WHERE winner_id = ?", (user_id,))
-    player_losses_cursor = await db.execute("SELECT * FROM matches WHERE loser_id = ?", (user_id,))
-
-    player_wins = await player_wins_cursor.fetchone()
-    player_losses = await player_losses_cursor.fetchone()
-    
-    if player_wins or player_losses:
-        return True
-    else:
-        return False 
+    cursor = await db.execute(
+        "SELECT participant_id FROM match_participants WHERE player_id = ? LIMIT 1",
+        (user_id,)
+    )
+    result = await cursor.fetchone()
+    return result is not None
 
 # checks if players are in players table and adds if they aren't
 async def handle_inputted_players(player_ids, db):
@@ -151,128 +135,6 @@ async def handle_inputted_players(player_ids, db):
                 1000
             )
         """, (player_id,))
-    await db.commit()
-
-# Calculate Elo change
-async def calculate_elo(winner_rounds, loser_rounds, rating1, rating2):
-    K_FACTOR = 80  # Elo constant
-    round_ratio = (winner_rounds - loser_rounds) / 10
-    round_adjustment = (K_FACTOR/4)*round_ratio
-
-    winner_expected_score = 1 / (1 + 10 ** ((rating2 - rating1) / 400))
-    loser_expected_score = 1 / (1 + 10 ** ((rating1 - rating2) / 400))
-
-    winner_elo_change =int(K_FACTOR * (1 - winner_expected_score)) + round_adjustment
-    loser_elo_change =abs(int(K_FACTOR * (0 - loser_expected_score))) + round_adjustment
-
-    return winner_elo_change, loser_elo_change, winner_expected_score, loser_expected_score
-
-# Calculate SP changes
-async def calculate_sp_changes(winner_rating, loser_rating, winner_rounds, loser_rounds, expected_score):
-    
-    elo_difference = loser_rating - winner_rating
-    elo_difference_percentage = loser_rating / winner_rating
-    
-    round_ratio = (winner_rounds - loser_rounds) / 10  # Normalize to a scale of -1 to 1
-    
-    thresholds = [
-    (0.95, 100), (0.85, 110), (0.80, 120), (0.70, 120), (0.65, 120), (0.60, 130), 
-    (0.55, 130), (0.50, 150), (0.40, 150), (0.30, 160), (0.20, 200), 
-    (0.10, 200)
-    ]
-
-    for threshold, sp in thresholds:
-        if expected_score >= threshold:
-            base_sp = sp
-            break
-    else:
-        base_sp = 250
-    
-    sp_for_round_ratio = int(round(base_sp / 4))
-    
-    # Winner SP calculation
-    winner_sp_change = int(max(0, (base_sp + (elo_difference / 7.5))) + (round_ratio * sp_for_round_ratio))
-    
-    winner_sp_change = int(round(winner_sp_change))  # Ensure at least 1 SP is gained
-     
-    # Loser SP calculation
-    loser_sp_change = int(winner_sp_change * 0.35)  # Loser loses 50% of what the winner gains
-
-    loser_sp_change = loser_sp_change * elo_difference_percentage
-    
-    loser_sp_change = int(round(loser_sp_change))  # Ensure SP loss is non-negative
-    
-    return winner_sp_change, loser_sp_change
-
-# Calculate Straftat changes
-async def calculate_straftcoin_changes(winner_rounds, loser_rounds, expected_score):
-    
-    round_ratio = (winner_rounds - loser_rounds) / 10
-
-    thresholds = [
-    (0.95, 4000, 0.95), (0.85, 5000, 0.9), (0.80, 5200, 0.8), (0.70, 5400, 0.7), 
-    (0.65, 5600, 0.8), (0.60, 5800, 0.8), (0.55, 6000, 0.8), (0.50, 6200, 0.8), 
-    (0.40, 6400, 0.8), (0.30, 6600, 0.8), (0.20, 6800, 0.8), (0.10, 7000, 0.8)
-    ]
-
-    for threshold, straftcoin, percentage in thresholds:
-        if expected_score >= threshold:
-            base_straftcoin = straftcoin
-            loser_percent_cut = percentage
-            break
-    else:
-        base_straftcoin = 10000
-        loser_percent_cut = 0.8
-
-    straftcoin_for_round_ratio = int(round(base_straftcoin / 4))
-
-    winner_straftcoin_change = base_straftcoin + (straftcoin_for_round_ratio * round_ratio)
-    winner_straftcoin_change = int(round(max(winner_straftcoin_change, 0)))
-
-    loser_straftcoin_change = (base_straftcoin * loser_percent_cut) + (straftcoin_for_round_ratio * (abs(round_ratio-1)))
-    loser_straftcoin_change = int(round(max(loser_straftcoin_change, 0)))
-
-    return winner_straftcoin_change, loser_straftcoin_change
-
-async def add_player_to_db(player_id, player_new_rating, player_new_sp, player_rank, winner_rounds, loser_rounds, player_new_straftcoins, outcome, db):
-
-    if outcome == 'winner':
-        winr_or_lsr_rounds = [winner_rounds, loser_rounds]
-        outcome_table_identifier = 'wins'
-    elif outcome == 'loser':
-        winr_or_lsr_rounds = [loser_rounds, winner_rounds]
-        outcome_table_identifier = 'losses'
-    
-    current_highest_rank_achieved = await get_highest_rank_achieved(db, player_id)
-    current_highest_sp_achieved = await get_highest_sp_achieved(db, player_id)
-    
-    if player_new_sp > current_highest_sp_achieved:
-        current_highest_rank_achieved = player_rank
-        current_highest_sp_achieved = player_new_sp
-
-    variables = (player_new_rating, player_new_sp, 
-                 player_rank, 
-                 winr_or_lsr_rounds[0], 
-                 winr_or_lsr_rounds[1], 
-                 player_new_straftcoins,
-                 current_highest_rank_achieved,
-                 current_highest_sp_achieved,
-                 player_id)
-    
-    await db.execute(f"""
-    UPDATE players SET 
-        rating = ?,
-        sp = ?,
-        rank = ?,
-        {outcome_table_identifier} = {outcome_table_identifier} + 1,
-        rounds_won = rounds_won + ?,
-        rounds_lost = rounds_lost + ?,
-        straftcoins = ?,
-        highest_rank_achieved = ?,
-        highest_sp_achieved = ?
-        WHERE user_id = ?                 
-    """, variables)
-    
     await db.commit()
 
 async def match_to_db(player_rounds, rounds_to_win, db):

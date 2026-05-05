@@ -4,42 +4,93 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error
 
 async def fetch_data(db):
-    matches = await db.execute_fetchall("SELECT * FROM matches")
+    """
+    Reconstructs a 1v1 match dataset by joining matches + match_participants.
+    Only 1v1 games are used for model training since spread is a 1v1 concept.
+    """
+    raw = await db.execute_fetchall("""
+        SELECT
+            m.match_id,
+            mp1.player_id   AS winner_id,
+            mp2.player_id   AS loser_id,
+            mp1.rounds_won  AS winner_rounds,
+            mp2.rounds_won  AS loser_rounds,
+            mp1.rounds_won - mp2.rounds_won AS spread,
+            m.total_rounds
+        FROM matches m
+        JOIN match_participants mp1
+            ON m.match_id = mp1.match_id AND mp1.placement = 1
+        JOIN match_participants mp2
+            ON m.match_id = mp2.match_id AND mp2.placement = 2
+        WHERE m.game_mode = '1v1'
+    """)
+
     players = await db.execute_fetchall("SELECT * FROM players")
-    
-    matches_df = pd.DataFrame(matches, columns=["match_id", "winner_id", "loser_id", "winner_rounds", "loser_rounds",
-                                                "winner_elo_change", "loser_elo_change", "winner_sp_change", 
-                                                "loser_sp_change", "timestamp", 'outcome', 'spread', 
-                                                'total_rounds', 'winner_straftcoin_change', 'loser_straftcoin_change'])
-    
-    players_df = pd.DataFrame(players, columns=["user_id", "rating", "sp", "rank", "wins", "losses", 
-                                                "rounds_won", "rounds_lost", 'straftcoins', 'highest_rank_achieved', 'highest_sp_achieved'])
+
+    matches_df = pd.DataFrame(raw, columns=[
+        'match_id', 'winner_id', 'loser_id',
+        'winner_rounds', 'loser_rounds',
+        'spread', 'total_rounds'
+    ])
+
+    players_df = pd.DataFrame(players, columns=[
+        'user_id',
+        'rating_1v1', 'sp_1v1', 'rank_1v1',
+        'wins_1v1', 'losses_1v1',
+        'rounds_won_1v1', 'rounds_lost_1v1',
+        'highest_rank_1v1', 'highest_sp_1v1',
+        'rating_mp', 'sp_mp', 'rank_mp',
+        'wins_mp', 'losses_mp',
+        'rounds_won_mp', 'rounds_lost_mp',
+        'highest_rank_mp', 'highest_sp_mp',
+        'straftcoins'
+    ])
+
     return matches_df, players_df
+
 
 async def prepare_features(matches_df_init, players_df_init, predicted_variable):
     matches_df = matches_df_init.copy()
-    players_df = players_df_init.copy()
-    
-    players_df = players_df.set_index("user_id")
-    
-    matches_df["elo_diff"] = abs(matches_df["winner_id"].map(players_df["rating"]) - matches_df["loser_id"].map(players_df["rating"]))
-    matches_df["sp_diff"] = abs(matches_df["winner_id"].map(players_df["sp"]) - matches_df["loser_id"].map(players_df["sp"]))
+    players_df = players_df_init.copy().set_index('user_id')
 
-    for stat in ["rating", "sp", "wins", "losses", "rounds_won", "rounds_lost"]:
-        matches_df[f"winner_{stat}"] = matches_df["winner_id"].map(players_df[stat])
-        matches_df[f"loser_{stat}"] = matches_df["loser_id"].map(players_df[stat])
+    matches_df['elo_diff'] = abs(
+        matches_df['winner_id'].map(players_df['rating_1v1']) -
+        matches_df['loser_id'].map(players_df['rating_1v1'])
+    )
+    matches_df['sp_diff'] = abs(
+        matches_df['winner_id'].map(players_df['sp_1v1']) -
+        matches_df['loser_id'].map(players_df['sp_1v1'])
+    )
 
-    matches_df["winner_win_rate"] = matches_df["winner_wins"] / (matches_df["winner_wins"] + matches_df["winner_losses"])
-    matches_df["loser_win_rate"] = matches_df["loser_wins"] / (matches_df["loser_wins"] + matches_df["loser_losses"])
-    matches_df["winner_round_rate"] = matches_df["winner_rounds_won"] / (matches_df["winner_rounds_won"] + matches_df["winner_rounds_lost"])
-    matches_df["loser_round_rate"] = matches_df["loser_rounds_won"] / (matches_df["loser_rounds_won"] + matches_df["loser_rounds_lost"])
+    for stat in ['rating_1v1', 'sp_1v1', 'wins_1v1', 'losses_1v1',
+                 'rounds_won_1v1', 'rounds_lost_1v1']:
+        short = stat.replace('_1v1', '')
+        matches_df[f'winner_{short}'] = matches_df['winner_id'].map(players_df[stat])
+        matches_df[f'loser_{short}']  = matches_df['loser_id'].map(players_df[stat])
 
-    features = ["winner_rating", "loser_rating", "elo_diff", "sp_diff", 
-                "winner_win_rate", "loser_win_rate", "winner_round_rate", "loser_round_rate"]
-    X = matches_df[features]
-    y = matches_df[predicted_variable]
+    matches_df['winner_win_rate'] = (
+        matches_df['winner_wins'] /
+        (matches_df['winner_wins'] + matches_df['winner_losses'])
+    )
+    matches_df['loser_win_rate'] = (
+        matches_df['loser_wins'] /
+        (matches_df['loser_wins'] + matches_df['loser_losses'])
+    )
+    matches_df['winner_round_rate'] = (
+        matches_df['winner_rounds_won'] /
+        (matches_df['winner_rounds_won'] + matches_df['winner_rounds_lost'])
+    )
+    matches_df['loser_round_rate'] = (
+        matches_df['loser_rounds_won'] /
+        (matches_df['loser_rounds_won'] + matches_df['loser_rounds_lost'])
+    )
 
-    return X, y
+    features = [
+        'winner_rating', 'loser_rating', 'elo_diff', 'sp_diff',
+        'winner_win_rate', 'loser_win_rate',
+        'winner_round_rate', 'loser_round_rate'
+    ]
+    return matches_df[features], matches_df[predicted_variable]
 
 async def predict_variable(player1_id, player2_id, predicted_variable, db):
 
@@ -55,14 +106,32 @@ async def predict_variable(player1_id, player2_id, predicted_variable, db):
     def prepare_new_data(winner_id, loser_id):
         player_stats = players_df.set_index("user_id")
         new_data = pd.DataFrame({
-            "winner_rating": [player_stats.loc[winner_id, "rating"]],
-            "loser_rating": [player_stats.loc[loser_id, "rating"]],
-            "elo_diff": [abs(player_stats.loc[winner_id, "rating"] - player_stats.loc[loser_id, "rating"])],
-            "sp_diff": [abs(player_stats.loc[winner_id, "sp"] - player_stats.loc[loser_id, "sp"])],
-            "winner_win_rate": [player_stats.loc[winner_id, "wins"] / (player_stats.loc[winner_id, "wins"] + player_stats.loc[winner_id, "losses"])],
-            "loser_win_rate": [player_stats.loc[loser_id, "wins"] / (player_stats.loc[loser_id, "wins"] + player_stats.loc[loser_id, "losses"])],
-            "winner_round_rate": [player_stats.loc[winner_id, "rounds_won"] / (player_stats.loc[winner_id, "rounds_won"] + player_stats.loc[winner_id, "rounds_lost"])],
-            "loser_round_rate": [player_stats.loc[loser_id, "rounds_won"] / (player_stats.loc[loser_id, "rounds_won"] + player_stats.loc[loser_id, "rounds_lost"])]
+            "winner_rating": [player_stats.loc[winner_id, "rating_1v1"]],
+            "loser_rating":  [player_stats.loc[loser_id,  "rating_1v1"]],
+            "elo_diff": [abs(
+                player_stats.loc[winner_id, "rating_1v1"] -
+                player_stats.loc[loser_id,  "rating_1v1"]
+            )],
+            "sp_diff": [abs(
+                player_stats.loc[winner_id, "sp_1v1"] -
+                player_stats.loc[loser_id,  "sp_1v1"]
+            )],
+            "winner_win_rate": [
+                player_stats.loc[winner_id, "wins_1v1"] /
+                (player_stats.loc[winner_id, "wins_1v1"] + player_stats.loc[winner_id, "losses_1v1"])
+            ],
+            "loser_win_rate": [
+                player_stats.loc[loser_id, "wins_1v1"] /
+                (player_stats.loc[loser_id, "wins_1v1"] + player_stats.loc[loser_id, "losses_1v1"])
+            ],
+            "winner_round_rate": [
+                player_stats.loc[winner_id, "rounds_won_1v1"] /
+                (player_stats.loc[winner_id, "rounds_won_1v1"] + player_stats.loc[winner_id, "rounds_lost_1v1"])
+            ],
+            "loser_round_rate": [
+                player_stats.loc[loser_id, "rounds_won_1v1"] /
+                (player_stats.loc[loser_id, "rounds_won_1v1"] + player_stats.loc[loser_id, "rounds_lost_1v1"])
+            ],
         })
         return xgb.DMatrix(new_data)
 
