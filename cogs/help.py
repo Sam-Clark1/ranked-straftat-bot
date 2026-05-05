@@ -22,7 +22,7 @@ class Help(commands.Cog):
     - Example: `!stats @Player1`
 
     3. **!lb**
-    - Displays the leaderboard sorted by SP in descending order.
+    - Displays the leaderboard for 1v1 matches sorted by SP in descending order.
     - Shows player name, rank, and SP.
     - Example: `!lb`
 
@@ -41,7 +41,11 @@ class Help(commands.Cog):
     - Shows player name and Straftcoin balance.
     - Example: `!slb`
 
-    7. **!help**
+    7. **!mlb**
+    - Displays the leaderboard for Multiplayer (3-10 player games) sorted by SP in descending order.
+    - Example: `!mlb`
+
+    8. **!help**
     - Displays this help message.
     - Example: `!help`
     """
