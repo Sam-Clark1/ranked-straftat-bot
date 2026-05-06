@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 import aiosqlite
-from command_helpers import get_emoji, get_display_name
+from command_helpers import get_emoji, get_display_name, chunk_message
 
 class Leaderboard(commands.Cog):
     def __init__(self, bot):
@@ -41,7 +41,8 @@ class Leaderboard(commands.Cog):
             rank_emote = await get_emoji([rank])
             leaderboard_message_body += f"- {username}: {rank}{rank_emote[0]} {sp} SP\n"
 
-        await thread.send(leaderboard_message_body)
+        for chunk in chunk_message(leaderboard_message_body):
+            await thread.send(chunk)
 
     @commands.command()
     async def lb(self, ctx):

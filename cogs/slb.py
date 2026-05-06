@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 import aiosqlite
-from command_helpers import get_emoji, get_display_name
+from command_helpers import get_emoji, get_display_name, chunk_message
 
 class StraftcoinLB(commands.Cog):
     def __init__(self, bot):
@@ -36,7 +36,8 @@ class StraftcoinLB(commands.Cog):
             
             leaderboard_message_body += f"- {username}: {straftcoin}{stratcoin_emote[0]}\n"
 
-        await thread.send(leaderboard_message_body)
+        for chunk in chunk_message(leaderboard_message_body):
+            await thread.send(chunk)
 
 async def setup(bot):
     await bot.add_cog(StraftcoinLB(bot))

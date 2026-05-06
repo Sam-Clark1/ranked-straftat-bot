@@ -1,3 +1,4 @@
+import asyncio
 import discord
 from discord.ext import commands
 from command_helpers import match_to_db
@@ -140,7 +141,7 @@ class Record(commands.Cog):
             participant_ids = [r['player_id'] for r in results]
 
             bet_match_title = f"[FT{rounds_to_win}] " + " vs ".join(
-                member_lookup[r['player_id']].display_name for r in results
+                sorted(member_lookup[r['player_id']].display_name for r in results)
             )
 
             bet_settlements_message = await handle_bet_payouts(
@@ -164,7 +165,7 @@ class Record(commands.Cog):
                 )
                 await thread.send(bet_settlements_message)
 
-            await train_models('spread', db)
+            asyncio.create_task(train_models('spread'))
 
 
 async def setup(bot):

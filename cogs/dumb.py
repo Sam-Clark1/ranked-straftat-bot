@@ -1,3 +1,4 @@
+import asyncio
 import os
 import discord
 from discord.ext import commands
@@ -15,8 +16,8 @@ class Dumb(commands.Cog):
     async def dumb(self, ctx):
         async with aiosqlite.connect("rankings.db") as db:
             load_dotenv()
-            ADMIN_ID = os.environ['ADMIN_ID']
-            dummy_authorized_id = ADMIN_ID 
+            ADMIN_ID = int(os.environ['ADMIN_ID'])
+            dummy_authorized_id = ADMIN_ID
 
             if ctx.author.id != dummy_authorized_id:
                 await ctx.send("You are not authorized to undo matches.")
@@ -24,7 +25,7 @@ class Dumb(commands.Cog):
             
             
             DUMB_PLAYER_IDS = os.environ['DUMB_PLAYER_IDS']
-            player_ids = [int(id) for id in DUMB_PLAYER_IDS]
+            player_ids = [int(id.strip()) for id in DUMB_PLAYER_IDS.split(',')]
 
             # Randomize matches between players
             matches_to_create = 10 
@@ -73,7 +74,7 @@ class Dumb(commands.Cog):
 
             await thread.send("**Dummy Matches Created:**\n" + "\n".join(summaries))
 
-            await train_models('spread', db)
+            asyncio.create_task(train_models('spread'))
 
 
 async def setup(bot):

@@ -146,9 +146,10 @@ async def predict_variable(player1_id, player2_id, predicted_variable, db):
     
     return pred_variable1
 
-async def train_models(predicted_variable, db):
-
-    matches_df, players_df = await fetch_data(db)
+async def train_models(predicted_variable):
+    import aiosqlite
+    async with aiosqlite.connect('rankings.db') as db:
+        matches_df, players_df = await fetch_data(db)
     X, y = await prepare_features(matches_df, players_df, predicted_variable)
 
     # Need enough samples to split into train and test sets.
@@ -169,7 +170,7 @@ async def train_models(predicted_variable, db):
         "seed":          42,
     }
 
-    booster = xgb.train(params, dtrain, num_boost_round=100, verbose_eval=False)
+    booster = xgb.train(params, dtrain, num_boost_round=100)
 
     if predicted_variable == 'spread':
         booster.save_model("spread_model.booster")

@@ -136,8 +136,11 @@ class Bet(commands.Cog):
                 dog_played = await get_player_matches(db, dog.id)
 
                 if fav_played and dog_played:
-                    predicted_spread = await predict_variable(fav.id, dog.id, 'spread', db)
-                    predicted_spread = max(1.5, min(8.5, predicted_spread))
+                    try:
+                        predicted_spread = await predict_variable(fav.id, dog.id, 'spread', db)
+                        predicted_spread = max(1.5, min(8.5, predicted_spread))
+                    except Exception:
+                        predicted_spread = 6.5
                 elif fav_played or dog_played:
                     predicted_spread = 6.5
                 else:
@@ -343,7 +346,8 @@ class Bet(commands.Cog):
                             'self_bettable_ids': set(),
                         }
 
-                # O/U total rounds
+                # O/U total rounds — in-game players may bet (no single player controls total)
+                all_player_ids = {p.id for p in players}
                 ou_total_line = round(rounds_to_win * len(players) * 0.55, 1)
                 bets_info[next_label()] = {
                     'type': 'ou_total',
@@ -352,7 +356,7 @@ class Bet(commands.Cog):
                     'odds': _add_vig((10, 15)),
                     'player_bet_on_id': None,
                     'player_b_id': None,
-                    'self_bettable_ids': set(),
+                    'self_bettable_ids': all_player_ids,
                 }
                 bets_info[next_label()] = {
                     'type': 'ou_total',
@@ -361,15 +365,16 @@ class Bet(commands.Cog):
                     'odds': _add_vig((0, 10)),
                     'player_bet_on_id': None,
                     'player_b_id': None,
-                    'self_bettable_ids': set(),
+                    'self_bettable_ids': all_player_ids,
                 }
 
-                # O/U per-player rounds — nobody in-game may bet their own
+                # O/U per-player rounds — in-game players may NOT bet their own rounds
                 for player in players:
                     expected = round(
                         rounds_to_win * win_probs[player.id] * len(players) * 0.6, 1
                     )
                     ou_line = round(expected - 0.5, 1)
+                    others = {p.id for p in players if p.id != player.id}
                     bets_info[next_label()] = {
                         'type': 'ou_player',
                         'display': f"O/U {player.display_name} Rounds",
@@ -377,7 +382,7 @@ class Bet(commands.Cog):
                         'odds': _add_vig((5, 15)),
                         'player_bet_on_id': player.id,
                         'player_b_id': None,
-                        'self_bettable_ids': set(),
+                        'self_bettable_ids': others,
                     }
                     bets_info[next_label()] = {
                         'type': 'ou_player',
@@ -386,7 +391,7 @@ class Bet(commands.Cog):
                         'odds': _add_vig((5, 15)),
                         'player_bet_on_id': player.id,
                         'player_b_id': None,
-                        'self_bettable_ids': set(),
+                        'self_bettable_ids': others,
                     }
 
             # ----------------------------------------------------------------
@@ -412,8 +417,8 @@ class Bet(commands.Cog):
             straftcoin_emoji = await get_emoji(['Straftcoin'])
             await thread.send(
                 f"Welcome to the betting thread for **{match_title}**!\n"
-                f"- **Single bet**: `A 100` — letter is the bet, number is your stake.\n"
-                f"- **Parlay**: `P A C 100` — all legs must win. Minimum 2 legs, max 6.\n"
+                f"- **Single bet**: `A 100` — label then stake.\n"
+                f"- **Parlay**: `A C 100` — labels then stake (2–6 legs, all must win).\n"
                 f"- Bets lock after 2 minutes.\n"
                 f"- Players in the match can only bet on their own positive outcomes.\n"
                 f"- No account? You start with 1000 {straftcoin_emoji[0]}."
@@ -441,14 +446,20 @@ class Bet(commands.Cog):
             # ----------------------------------------------------------------
             def has_parlay_conflict(leg_labels):
                 """
-                Returns True if any two legs in the parlay directly
-                contradict each other, making the bet free money.
+                Returns True if any two legs directly contradict each other
+                or are perfectly correlated (one leg guaranteed by the other).
                 """
-                moneyline_seen    = False
-                last_place_seen   = False
-                ou_total_sides    = set()
-                h2h_pairs         = set()
-                ou_player_map     = {}   # player_id -> set of sides
+                moneyline_seen  = False
+                last_place_seen = False
+                ou_total_seen   = False
+                h2h_pairs       = set()
+                ou_player_seen  = set()  # player_ids that already have an ou_player leg
+
+                ml_player       = None   # pid of the moneyline leg, if any
+                h2h_winner_pids = set()  # pids on the winning side of an H2H leg
+                h2h_loser_pids  = set()  # pids on the losing side of an H2H leg
+                podium_pids     = set()  # pids with a podium leg
+                last_place_pids = set()  # pids with a last_place leg
 
                 for lbl in leg_labels:
                     leg = bets_info[lbl]
@@ -456,52 +467,72 @@ class Bet(commands.Cog):
                     pid = leg['player_bet_on_id']
 
                     if t == 'moneyline':
-                        # Two moneylines in same parlay = conflict
                         if moneyline_seen:
                             return True
                         moneyline_seen = True
-
-                    elif t == 'last_place':
-                        # Two last-place bets = conflict
-                        if last_place_seen:
+                        # Winning implies: podium, beats every H2H opponent, not last
+                        if (pid in podium_pids or pid in h2h_winner_pids
+                                or pid in last_place_pids or pid in h2h_loser_pids):
                             return True
-                        last_place_seen = True
+                        ml_player = pid
 
-                    elif t == 'ou_total':
-                        side = 'O' if leg['value'].startswith('O') else 'U'
-                        if side in ou_total_sides or ou_total_sides:
-                            return True     # same side twice, or over+under
-                        ou_total_sides.add(side)
+                    elif t == 'podium':
+                        if pid == ml_player:
+                            return True
+                        podium_pids.add(pid)
 
                     elif t == 'head_to_head':
                         pair    = (pid, leg['player_b_id'])
                         reverse = (leg['player_b_id'], pid)
                         if reverse in h2h_pairs:
-                            return True     # A>B and B>A
+                            return True                         # A>B and B>A
                         h2h_pairs.add(pair)
+                        if pid == ml_player:
+                            return True                         # ML winner can't also lose an H2H
+                        if leg['player_b_id'] == ml_player:
+                            return True                         # ML winner can't be beaten in H2H
+                        h2h_winner_pids.add(pid)
+                        h2h_loser_pids.add(leg['player_b_id'])
+
+                    elif t == 'last_place':
+                        if last_place_seen:
+                            return True
+                        last_place_seen = True
+                        if pid == ml_player:
+                            return True                         # can't win and finish last
+                        last_place_pids.add(pid)
+
+                    elif t == 'ou_total':
+                        if ou_total_seen:
+                            return True                         # any second ou_total leg conflicts
+                        ou_total_seen = True
 
                     elif t == 'ou_player':
-                        side = 'O' if leg['value'].startswith('O') else 'U'
-                        if pid not in ou_player_map:
-                            ou_player_map[pid] = set()
-                        if side in ou_player_map[pid] or ou_player_map[pid]:
-                            return True     # over+under same player
-                        ou_player_map[pid].add(side)
+                        if pid in ou_player_seen:
+                            return True                         # any second bet on same player's rounds
+                        ou_player_seen.add(pid)
 
                 return False
 
             # ----------------------------------------------------------------
             # COLLECT AND PROCESS BETS
             # ----------------------------------------------------------------
+            # Single: "A 100"  — one label + stake
+            # Parlay:  "A B 100" — two-to-six labels + stake (no P prefix needed)
             single_regex = re.compile(r'^([A-Za-z]{1,2})\s+(\d+)$')
-            parlay_regex = re.compile(r'^P(?:\s+[A-Za-z]{1,2}){2,6}\s+\d+$', re.IGNORECASE)
-
-            collected_single_bets = []
+            parlay_regex = re.compile(
+                r'^([A-Za-z]{1,2})(?:\s+[A-Za-z]{1,2}){1,5}\s+\d+$', re.IGNORECASE
+            )
+            # Catches anything that looks like labels + a number but didn't match above
+            bet_attempt_regex = re.compile(r'^[A-Za-z]{1,2}(?:\s+\S+)+$')
 
             async for message in thread.history(oldest_first=True):
                 content = message.content.strip()
                 author  = message.author
                 in_game = author.id in player_ids
+
+                if message.author.bot:
+                    continue
 
                 # ---- SINGLE BET ----
                 single_match = single_regex.match(content)
@@ -528,19 +559,17 @@ class Bet(commands.Cog):
                         )
                         continue
 
-                    # Delegate balance check + row construction to bet_helpers
-                    bet_row = await handle_bet_placements(
+                    # Delegate balance check + DB insert to bet_helpers
+                    await handle_bet_placements(
                         match_title, label, amount,
                         bet_meta, thread, message, db
                     )
-                    if bet_row is not False:
-                        collected_single_bets.append(bet_row)
                     continue
 
                 # ---- PARLAY ----
                 if parlay_regex.match(content):
                     parts      = content.split()
-                    leg_labels = [p.upper() for p in parts[1:-1]]
+                    leg_labels = [p.upper() for p in parts[:-1]]
                     try:
                         stake = int(parts[-1])
                     except ValueError:
@@ -592,19 +621,20 @@ class Bet(commands.Cog):
                         match_title, leg_labels, stake,
                         bets_info, thread, message, db
                     )
+                    continue
 
-            # ----------------------------------------------------------------
-            # INSERT SINGLE BETS
-            # ----------------------------------------------------------------
-            if collected_single_bets:
-                await db.executemany("""
-                    INSERT INTO live_bets
-                        (user_id, match_title, player_bet_on_id, player_b_id,
-                         bet_type, bet_value, bet_odds, bet_amount, parlay_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
-                """, collected_single_bets)
+                # ---- MALFORMED BET HINT ----
+                # Message didn't match single or parlay format but looks like a bet attempt
+                tokens = content.split()
+                if (len(tokens) >= 2
+                        and tokens[-1].isdigit()
+                        and re.match(r'^[A-Za-z]{1,2}$', tokens[0])):
+                    await thread.send(
+                        f"{author.mention}, bet not recognized. "
+                        f"Single: `A 100` — label then stake. "
+                        f"Parlay: `A B 100` — labels then stake (2–6 legs)."
+                    )
 
-            await db.commit()
             await thread.send(
                 f"Bets for the next **{match_title}** match have been locked in."
             )

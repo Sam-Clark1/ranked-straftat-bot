@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 import aiosqlite
-from command_helpers import get_display_name
+from command_helpers import get_display_name, chunk_message
 
 class Matchstats(commands.Cog):
     def __init__(self, bot):
@@ -11,18 +11,20 @@ class Matchstats(commands.Cog):
     async def matchstats(self, ctx, player: discord.Member):
         async with aiosqlite.connect("rankings.db") as db:
 
-            # Query match stats against each opponent
+            # Query match stats against each opponent via match_participants
             async with db.execute("""
-                SELECT 
-                    CASE WHEN winner_id = ? THEN loser_id ELSE winner_id END AS opponent_id,
-                    SUM(CASE WHEN winner_id = ? THEN 1 ELSE 0 END) AS wins_against,
-                    SUM(CASE WHEN loser_id = ? THEN 1 ELSE 0 END) AS losses_against,
-                    SUM(CASE WHEN winner_id = ? THEN winner_rounds ELSE loser_rounds END) AS rounds_won_against,
-                    SUM(CASE WHEN winner_id = ? THEN loser_rounds ELSE winner_rounds END) AS rounds_lost_against
-                FROM matches
-                WHERE winner_id = ? OR loser_id = ?
-                GROUP BY opponent_id
-            """, (player.id, player.id, player.id, player.id, player.id, player.id, player.id)) as cursor:
+                SELECT
+                    mp2.player_id AS opponent_id,
+                    SUM(CASE WHEN mp1.placement < mp2.placement THEN 1 ELSE 0 END) AS wins_against,
+                    SUM(CASE WHEN mp1.placement > mp2.placement THEN 1 ELSE 0 END) AS losses_against,
+                    SUM(mp1.rounds_won) AS rounds_won_against,
+                    SUM(mp2.rounds_won) AS rounds_lost_against
+                FROM match_participants mp1
+                JOIN match_participants mp2
+                    ON mp1.match_id = mp2.match_id AND mp2.player_id != mp1.player_id
+                WHERE mp1.player_id = ?
+                GROUP BY mp2.player_id
+            """, (player.id,)) as cursor:
                 rows = await cursor.fetchall()
 
         if not rows:
@@ -58,7 +60,8 @@ Rounds Won: {rounds_won}
 Rounds Lost: {rounds_lost}
 Rounds Won Percentage: {round_percentage:.2f}%
 """
-        await thread.send(stats_message_body)
+        for chunk in chunk_message(stats_message_body):
+            await thread.send(chunk)
 
 async def setup(bot):
     await bot.add_cog(Matchstats(bot))

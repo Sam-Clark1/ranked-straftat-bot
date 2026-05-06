@@ -1,5 +1,18 @@
 from datetime import datetime
 
+def chunk_message(text, max_len=1900):
+    """Split text into chunks that fit within Discord's 2000-char message limit."""
+    chunks = []
+    while len(text) > max_len:
+        split_at = text.rfind('\n', 0, max_len)
+        if split_at == -1:
+            split_at = max_len
+        chunks.append(text[:split_at])
+        text = text[split_at:].lstrip('\n')
+    if text:
+        chunks.append(text)
+    return chunks
+
 #get ranks based on sp number
 async def get_ranks():
     

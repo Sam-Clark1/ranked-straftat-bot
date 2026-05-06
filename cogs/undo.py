@@ -13,7 +13,7 @@ class Undo(commands.Cog):
     async def undo(self, ctx):
 
         load_dotenv()
-        ADMIN_ID = os.environ['ADMIN_ID']
+        ADMIN_ID = int(os.environ['ADMIN_ID'])
         undo_authorized_id = ADMIN_ID
         
         if ctx.author.id != undo_authorized_id:

@@ -12,6 +12,7 @@ from command_helpers import get_straftcoin, get_emoji, get_rating
 # ─────────────────────────────────────────────
 
 async def percentage_to_odds(percent_odds):
+    percent_odds = max(0.01, min(0.99, percent_odds))
     if percent_odds >= 0.5:
         odds = ((percent_odds * 100) / (1 - percent_odds)) * -1
     else:
@@ -162,11 +163,8 @@ async def create_odds_display(thread, bets_info, game_mode):
 
 async def handle_bet_placements(match_title, label, amount, bet_meta, thread, message, db):
     """
-    Validates balance and returns an 8-tuple for executemany INSERT into live_bets,
-    or False if the bet cannot be placed.
-
-    Tuple: (user_id, match_title, player_bet_on_id, player_b_id,
-            bet_type, bet_value, bet_odds, bet_amount)
+    Validates balance, deducts stake, inserts bet into live_bets, and commits —
+    all in one operation. Returns True on success, False on failure.
     """
     user_id  = message.author.id
     emojis   = await get_emoji(['Straftcoin'])
@@ -203,8 +201,6 @@ async def handle_bet_placements(match_title, label, amount, bet_meta, thread, me
     else:
         initial = 1000
         if amount > initial:
-            await db.execute("INSERT INTO players (user_id) VALUES (?)", (user_id,))
-            await db.commit()
             await thread.send(
                 f"{message.author.mention}, you start with {initial}{sc_emoji} "
                 f"and can't bet more than that."
@@ -217,6 +213,16 @@ async def handle_bet_placements(match_title, label, amount, bet_meta, thread, me
         )
         new_balance = initial - amount
 
+    await db.execute(
+        """
+        INSERT INTO live_bets
+            (user_id, match_title, player_bet_on_id, player_b_id,
+             bet_type, bet_value, bet_odds, bet_amount, parlay_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        """,
+        (user_id, match_title, player_bet_on_id, player_b_id,
+         bet_type, bet_value, bet_odds, amount)
+    )
     await db.commit()
 
     await thread.send(
@@ -227,12 +233,7 @@ async def handle_bet_placements(match_title, label, amount, bet_meta, thread, me
         f"- Balance: {new_balance}{sc_emoji}"
     )
 
-    return (
-        user_id, match_title,
-        player_bet_on_id, player_b_id,
-        bet_type, bet_value,
-        bet_odds, amount
-    )
+    return True
 
 
 # ─────────────────────────────────────────────
@@ -623,7 +624,7 @@ async def _settle_parlay(parlay_id, db):
     Pushes are treated as wins (leg removed from parlay effectively).
     """
     async with db.execute(
-        "SELECT result, bet_amount FROM past_bets WHERE parlay_id = ?",
+        "SELECT result FROM past_bets WHERE parlay_id = ?",
         (parlay_id,)
     ) as cursor:
         legs = await cursor.fetchall()
@@ -632,7 +633,7 @@ async def _settle_parlay(parlay_id, db):
         return
 
     # Any loss = parlay lost
-    if any(result == 'loss' for result, _ in legs):
+    if any(result == 'loss' for (result,) in legs):
         await db.execute(
             "UPDATE parlays SET status = 'lost' WHERE parlay_id = ?",
             (parlay_id,)
