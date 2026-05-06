@@ -22,9 +22,9 @@ class Undo(commands.Cog):
 
         async with aiosqlite.connect("rankings.db") as db:
 
-            # ----------------------------------------------------------------
+            
             # GET LATEST MATCH
-            # ----------------------------------------------------------------
+            
             match_row = await db.execute(
                 "SELECT match_id, total_rounds, game_mode "
                 "FROM matches ORDER BY match_id DESC LIMIT 1"
@@ -37,9 +37,9 @@ class Undo(commands.Cog):
 
             match_id, total_rounds, game_mode = match
 
-            # ----------------------------------------------------------------
+            
             # GET ALL PARTICIPANTS
-            # ----------------------------------------------------------------
+            
             async with db.execute("""
                 SELECT player_id, placement, rounds_won,
                        elo_change, sp_change, straftcoin_change
@@ -56,9 +56,9 @@ class Undo(commands.Cog):
                 )
                 return
 
-            # ----------------------------------------------------------------
+            
             # MODE-SPECIFIC COLUMN NAMES
-            # ----------------------------------------------------------------
+            
             if game_mode == '1v1':
                 sp_col     = 'sp_1v1'
                 rating_col = 'rating_1v1'
@@ -76,9 +76,9 @@ class Undo(commands.Cog):
                 rw_col     = 'rounds_won_mp'
                 rl_col     = 'rounds_lost_mp'
 
-            # ----------------------------------------------------------------
+            
             # REVERSE EACH PARTICIPANT'S STATS
-            # ----------------------------------------------------------------
+            
             for (player_id, placement, rounds_won,
                  elo_change, sp_change, straftcoin_change) in participants:
 
@@ -112,9 +112,9 @@ class Undo(commands.Cog):
                     player_id
                 ))
 
-            # ----------------------------------------------------------------
+            
             # REVERSE BETS
-            # ----------------------------------------------------------------
+            
             async with db.execute(
                 "SELECT * FROM past_bets WHERE match_id = ?", (match_id,)
             ) as cursor:
@@ -216,9 +216,9 @@ class Undo(commands.Cog):
                         "DELETE FROM past_bets WHERE bet_id = ?", (bet_id,)
                     )
 
-            # ----------------------------------------------------------------
+            
             # DELETE MATCH RECORDS
-            # ----------------------------------------------------------------
+            
             await db.execute(
                 "DELETE FROM match_participants WHERE match_id = ?", (match_id,)
             )
@@ -227,9 +227,9 @@ class Undo(commands.Cog):
             )
             await db.commit()
 
-        # ----------------------------------------------------------------
+        
         # CONFIRMATION
-        # ----------------------------------------------------------------
+        
         mode_label = '1v1' if game_mode == '1v1' else 'Multiplayer'
         participant_mentions = " vs ".join(
             f"<@{pid}>" for pid, *_ in participants

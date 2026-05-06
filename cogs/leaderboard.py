@@ -1,7 +1,9 @@
 import discord
 from discord.ext import commands
 import aiosqlite
-from command_helpers import get_emoji, get_display_name, chunk_message
+from command_helpers import get_emoji, get_display_name
+
+_PALE_GREEN = discord.Color(0x90ee90)
 
 class Leaderboard(commands.Cog):
     def __init__(self, bot):
@@ -11,11 +13,11 @@ class Leaderboard(commands.Cog):
         if mode == '1v1':
             sp_col   = 'sp_1v1'
             rank_col = 'rank_1v1'
-            title    = 'Ranked Straftat Leaderboard — 1v1'
+            title    = 'Leaderboard — 1v1'
         else:
             sp_col   = 'sp_mp'
             rank_col = 'rank_mp'
-            title    = 'Ranked Straftat Leaderboard — Multiplayer'
+            title    = 'Leaderboard — Multiplayer'
 
         async with aiosqlite.connect("rankings.db") as db:
             leaderboard_data = await db.execute(f"""
@@ -27,22 +29,34 @@ class Leaderboard(commands.Cog):
             await ctx.send('No Players in Database')
             return
 
-        leaderboard_message = await ctx.send(f'**{title}**')
+        top_message = await ctx.send(f'**Ranked Straftat {title}**')
+        thread = await ctx.channel.create_thread(name=title, message=top_message)
 
-        thread = await ctx.channel.create_thread(
-            name=title,
-            message=leaderboard_message
-        )
+        placement_emoji = {1: '🥇', 2: '🥈', 3: '🥉'}
+        embeds  = []
+        current = discord.Embed(title=f'Ranked Straftat {title}', color=_PALE_GREEN)
+        desc    = ''
+        LIMIT   = 4000
 
-        leaderboard_message_body = ''
-
-        for user_id, sp, rank in rows:
+        for i, (user_id, sp, rank) in enumerate(rows, 1):
             username   = await get_display_name(ctx, user_id)
-            rank_emote = await get_emoji([rank])
-            leaderboard_message_body += f"- {username}: {rank}{rank_emote[0]} {sp} SP\n"
+            rank_emote = (await get_emoji([rank]))[0]
+            pos        = placement_emoji.get(i, f'{i}.')
+            line       = f"{pos} **{username}** — {sp} SP · {rank} {rank_emote}\n"
 
-        for chunk in chunk_message(leaderboard_message_body):
-            await thread.send(chunk)
+            if len(desc) + len(line) > LIMIT:
+                current.description = desc
+                embeds.append(current)
+                current = discord.Embed(color=_PALE_GREEN)
+                desc = ''
+            desc += line
+
+        if desc:
+            current.description = desc
+            embeds.append(current)
+
+        for embed in embeds:
+            await thread.send(embed=embed)
 
     @commands.command()
     async def lb(self, ctx):

@@ -19,9 +19,9 @@ class Record(commands.Cog):
         """
         async with aiosqlite.connect("rankings.db") as db:
 
-            # ----------------------------------------------------------------
+            
             # PARSING
-            # ----------------------------------------------------------------
+            
             if len(args) < 4:
                 await ctx.send(
                     "Invalid input: Need at least 2 players.\n"
@@ -54,9 +54,9 @@ class Record(commands.Cog):
 
                 player_rounds.append((member, rounds))
 
-            # ----------------------------------------------------------------
+            
             # VALIDATION
-            # ----------------------------------------------------------------
+            
             if len(player_rounds) > 10:
                 await ctx.send("Invalid input: Maximum of 10 players per match.")
                 return
@@ -92,9 +92,9 @@ class Record(commands.Cog):
                 )
                 return
 
-            # ----------------------------------------------------------------
+            
             # RECORD
-            # ----------------------------------------------------------------
+            
             try:
                 results = await match_to_db(
                     [(m.id, r) for m, r in player_rounds],
@@ -105,35 +105,41 @@ class Record(commands.Cog):
                 await ctx.send(f"An error occurred while recording the match: {e}")
                 return
 
-            # ----------------------------------------------------------------
+            
             # BUILD OUTPUT MESSAGE
-            # ----------------------------------------------------------------
-            member_lookup = {m.id: m for m, _ in player_rounds}
-            game_mode     = results[0]['game_mode']
-            mode_label    = '1v1' if game_mode == '1v1' else 'Multiplayer'
+            
+            member_lookup   = {m.id: m for m, _ in player_rounds}
+            game_mode       = results[0]['game_mode']
+            mode_label      = '1v1' if game_mode == '1v1' else 'Multiplayer'
+            placement_emoji = {1: '🥇', 2: '🥈', 3: '🥉'}
 
-            match_lines = []
+            embed = discord.Embed(
+                title='Match Recorded',
+                description=f'*{mode_label} — First to {rounds_to_win}*',
+                color=discord.Color(0x90ee90)
+            )
+
             for r in results:
                 member  = member_lookup[r['player_id']]
-                sp_str  = f"+{r['sp_change']}"  if r['sp_change']  >= 0 else str(r['sp_change'])
+                sp_str  = f"+{r['sp_change']}"         if r['sp_change']         >= 0 else str(r['sp_change'])
                 sc_str  = f"+{r['straftcoin_change']}" if r['straftcoin_change'] >= 0 else str(r['straftcoin_change'])
-                elo_str = f"+{r['elo_change']:.1f}" if r['elo_change'] >= 0 else f"{r['elo_change']:.1f}"
+                elo_str = f"+{r['elo_change']:.1f}"    if r['elo_change']        >= 0 else f"{r['elo_change']:.1f}"
+                icon    = placement_emoji.get(r['placement'], f"#{r['placement']}")
 
-                match_lines.append(
-                    f"**#{r['placement']} {member.mention}** — {r['rounds_won']} rounds\n"
-                    f"  SP: {sp_str} → {r['new_sp']} | Rank: **{r['rank']}** {r['rank_emoji']}\n"
-                    f"  Straftcoin: {sc_str} → {r['new_straftcoins']} | Elo: {elo_str}"
+                embed.add_field(
+                    name=f"{icon} {member.display_name} — {r['rounds_won']} rounds",
+                    value=(
+                        f"SP: {sp_str} → **{r['new_sp']}** · Rank: **{r['rank']}** {r['rank_emoji']}\n"
+                        f"SC: {sc_str} → **{r['new_straftcoins']}** · Elo: {elo_str}"
+                    ),
+                    inline=(game_mode == '1v1')
                 )
 
-            message_content = (
-                f"**Match Recorded** *({mode_label} — First to {rounds_to_win})*\n\n"
-                + "\n\n".join(match_lines)
-            )
-            message = await ctx.send(message_content)
+            message = await ctx.send(embed=embed)
 
-            # ----------------------------------------------------------------
+            
             # BET PAYOUTS
-            # ----------------------------------------------------------------
+            
             winner       = results[0]
             second       = results[1]
             total_rounds = sum(r['rounds_won'] for r in results)
@@ -159,11 +165,8 @@ class Record(commands.Cog):
                     name=f"Resolved Bets — {winner_member.display_name}'s match",
                     message=message
                 )
-                await thread.send(
-                    f"**Spread (1st vs 2nd):** {spread}\n"
-                    f"**Total Rounds:** {total_rounds}"
-                )
-                await thread.send(bet_settlements_message)
+                for embed in bet_settlements_message:
+                    await thread.send(embed=embed)
 
             asyncio.create_task(train_models('spread'))
 

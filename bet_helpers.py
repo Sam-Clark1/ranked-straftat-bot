@@ -186,10 +186,13 @@ async def handle_bet_placements(match_title, label, amount, bet_meta, thread, me
     if result:
         current_coins = result[0]
         if amount > current_coins:
-            await thread.send(
-                f"{message.author.mention}, insufficient Straftcoins! "
-                f"You only have {current_coins}{sc_emoji}."
-            )
+            await thread.send(embed=discord.Embed(
+                description=(
+                    f"{message.author.mention} — insufficient Straftcoins! "
+                    f"You only have **{current_coins}** {sc_emoji}."
+                ),
+                color=discord.Color.red()
+            ))
             return False
 
         await db.execute(
@@ -201,10 +204,13 @@ async def handle_bet_placements(match_title, label, amount, bet_meta, thread, me
     else:
         initial = 1000
         if amount > initial:
-            await thread.send(
-                f"{message.author.mention}, you start with {initial}{sc_emoji} "
-                f"and can't bet more than that."
-            )
+            await thread.send(embed=discord.Embed(
+                description=(
+                    f"{message.author.mention} — you start with **{initial}** {sc_emoji} "
+                    f"and can't bet more than that."
+                ),
+                color=discord.Color.red()
+            ))
             return False
 
         await db.execute(
@@ -225,13 +231,14 @@ async def handle_bet_placements(match_title, label, amount, bet_meta, thread, me
     )
     await db.commit()
 
-    await thread.send(
-        f"{message.author.mention} — **{label}** bet placed!\n"
-        f"- Bet: {amount}{sc_emoji} on {bet_meta['display']} "
-        f"({_format_odds(bet_odds)} odds)\n"
-        f"- To Win: {amount_to_win}{sc_emoji}\n"
-        f"- Balance: {new_balance}{sc_emoji}"
-    )
+    embed = discord.Embed(title='Bet Placed', color=discord.Color(0x90ee90))
+    embed.add_field(name='Bettor',  value=message.author.mention,              inline=True)
+    embed.add_field(name='Bet',     value=f'{label} — {bet_meta["display"]}',  inline=True)
+    embed.add_field(name='Odds',    value=_format_odds(bet_odds),               inline=True)
+    embed.add_field(name='Stake',   value=f'{amount} {sc_emoji}',              inline=True)
+    embed.add_field(name='To Win',  value=f'{amount_to_win} {sc_emoji}',       inline=True)
+    embed.add_field(name='Balance', value=f'{new_balance} {sc_emoji}',         inline=True)
+    await thread.send(embed=embed)
 
     return True
 
@@ -267,10 +274,13 @@ async def handle_parlay_placement(match_title, leg_labels, stake, bets_info, thr
         await db.commit()
 
     if stake > current_coins:
-        await thread.send(
-            f"{message.author.mention}, insufficient Straftcoins! "
-            f"You only have {current_coins}{sc_emoji}."
-        )
+        await thread.send(embed=discord.Embed(
+            description=(
+                f"{message.author.mention} — insufficient Straftcoins! "
+                f"You only have **{current_coins}** {sc_emoji}."
+            ),
+            color=discord.Color.red()
+        ))
         return False
 
     # --- Combined multiplier ---
@@ -319,19 +329,18 @@ async def handle_parlay_placement(match_title, leg_labels, stake, bets_info, thr
     await db.commit()
 
     # --- Confirmation message ---
-    legs_summary = '\n'.join(
-        f"  {lbl}: {bets_info[lbl]['display']} "
-        f"({_format_odds(bets_info[lbl]['odds'])})"
+    legs_text = '\n'.join(
+        f'{lbl}: {bets_info[lbl]["display"]} ({_format_odds(bets_info[lbl]["odds"])})'
         for lbl in leg_labels
     )
-    await thread.send(
-        f"{message.author.mention} — **Parlay placed!**\n"
-        f"- Legs ({len(leg_labels)}):\n{legs_summary}\n"
-        f"- Stake: {stake}{sc_emoji}\n"
-        f"- Combined multiplier: {multiplier:.2f}x\n"
-        f"- To Win: {expected_win}{sc_emoji}\n"
-        f"- Balance: {current_coins - stake}{sc_emoji}"
-    )
+    embed = discord.Embed(title='Parlay Placed', color=discord.Color(0x90ee90))
+    embed.add_field(name='Bettor',                    value=message.author.mention,      inline=False)
+    embed.add_field(name=f'Legs ({len(leg_labels)})', value=legs_text,                   inline=False)
+    embed.add_field(name='Stake',                     value=f'{stake} {sc_emoji}',       inline=True)
+    embed.add_field(name='Multiplier',                value=f'{multiplier:.2f}x',        inline=True)
+    embed.add_field(name='To Win',                    value=f'{expected_win} {sc_emoji}',inline=True)
+    embed.add_field(name='Balance',                   value=f'{current_coins - stake} {sc_emoji}', inline=True)
+    await thread.send(embed=embed)
     return True
 
 
@@ -549,12 +558,12 @@ async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rou
         )
         await db.commit()
 
-        # --- Build settlement message ---
+        # --- Build settlement embeds ---
         emojis   = await get_emoji(['Poggers', 'KEKW', 'Straftcoin'])
         pog, kek, sc = emojis
 
-        message = ''
-        # Show single bets first, then parlay summaries
+        fields = []  # (name, value) pairs collected before distributing into embeds
+
         single_bets = [b for b in all_bets if b[11] is None]
         for b in single_bets:
             (user_id, _, _,
@@ -562,30 +571,29 @@ async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rou
              bet_type, bet_value, bet_odds, bet_amount,
              result, amount_won, _) = b
 
-            balance = await get_straftcoin(db, user_id)
-            bettor  = f'<@{user_id}>'
+            balance  = await get_straftcoin(db, user_id)
+            bettor   = f'<@{user_id}>'
             odds_str = _format_odds(bet_odds)
 
             if result == 'win':
-                message += (
-                    f"{bettor}: **Bet Won** {pog}\n"
-                    f"- {bet_type} **{bet_value}** | {bet_amount}{sc} @ {odds_str}\n"
-                    f"- Won: {amount_won}{sc} | Balance: {balance}{sc}\n"
-                )
+                fields.append((
+                    f'🏆 Bet Won {pog} — {bettor}',
+                    f'{bet_type} **{bet_value}** @ {odds_str} · Stake: {bet_amount} {sc}\n'
+                    f'+{amount_won} {sc} · Balance: {balance} {sc}'
+                ))
             elif result == 'loss':
-                message += (
-                    f"{bettor}: **Bet Lost** {kek}\n"
-                    f"- {bet_type} **{bet_value}** | {bet_amount}{sc} @ {odds_str}\n"
-                    f"- Balance: {balance}{sc}\n"
-                )
+                fields.append((
+                    f'❌ Bet Lost {kek} — {bettor}',
+                    f'{bet_type} **{bet_value}** @ {odds_str} · Stake: {bet_amount} {sc}\n'
+                    f'Balance: {balance} {sc}'
+                ))
             elif result == 'push':
-                message += (
-                    f"{bettor}: **Bet Pushed**\n"
-                    f"- {bet_type} **{bet_value}** | {bet_amount}{sc} @ {odds_str}\n"
-                    f"- Returned: {bet_amount}{sc} | Balance: {balance}{sc}\n"
-                )
+                fields.append((
+                    f'↩️ Bet Pushed — {bettor}',
+                    f'{bet_type} **{bet_value}** @ {odds_str}\n'
+                    f'Returned: {bet_amount} {sc} · Balance: {balance} {sc}'
+                ))
 
-        # Parlay summaries
         for pid in parlay_ids:
             async with db.execute(
                 "SELECT user_id, total_stake, combined_multiplier, status, payout "
@@ -595,21 +603,39 @@ async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rou
             if not p:
                 continue
             p_user, p_stake, p_mult, p_status, p_payout = p
-            balance  = await get_straftcoin(db, p_user)
-            bettor   = f'<@{p_user}>'
+            balance = await get_straftcoin(db, p_user)
+            bettor  = f'<@{p_user}>'
             if p_status == 'won':
-                message += (
-                    f"{bettor}: **Parlay Won!** {pog}\n"
-                    f"- Stake: {p_stake}{sc} | Multiplier: {p_mult:.2f}x\n"
-                    f"- Won: {p_payout}{sc} | Balance: {balance}{sc}\n"
-                )
+                fields.append((
+                    f'🏆 Parlay Won {pog} — {bettor}',
+                    f'Stake: {p_stake} {sc} · {p_mult:.2f}x\n'
+                    f'+{p_payout} {sc} · Balance: {balance} {sc}'
+                ))
             else:
-                message += (
-                    f"{bettor}: **Parlay Lost** {kek}\n"
-                    f"- Stake: {p_stake}{sc} | Balance: {balance}{sc}\n"
-                )
+                fields.append((
+                    f'❌ Parlay Lost {kek} — {bettor}',
+                    f'Stake: {p_stake} {sc} · Balance: {balance} {sc}'
+                ))
 
-        return message if message else False
+        if not fields:
+            return False
+
+        # Distribute fields across embeds (max 25 each); first gets title + description
+        embeds = []
+        for i, chunk_start in enumerate(range(0, len(fields), 25)):
+            chunk  = fields[chunk_start:chunk_start + 25]
+            embed  = discord.Embed(color=discord.Color(0x90ee90))
+            if i == 0:
+                embed.title       = 'Bet Settlements'
+                embed.description = (
+                    f'**{match_title}**\n'
+                    f'Spread (1st vs 2nd): {spread} · Total Rounds: {total_rounds}'
+                )
+            for name, value in chunk:
+                embed.add_field(name=name, value=value, inline=False)
+            embeds.append(embed)
+
+        return embeds
 
     except Exception as e:
         await db.rollback()

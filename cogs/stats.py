@@ -3,6 +3,8 @@ from discord.ext import commands
 import aiosqlite
 from command_helpers import get_emoji
 
+_PALE_GREEN = discord.Color(0x90ee90)
+
 class Stats(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -41,13 +43,11 @@ class Stats(commands.Cog):
                 straftcoins
             ) = player_data
 
-            # --- 1v1 calculations ---
             total_matches_1v1 = wins_1v1 + losses_1v1
             total_rounds_1v1  = rounds_won_1v1 + rounds_lost_1v1
             win_pct_1v1       = (wins_1v1 / total_matches_1v1 * 100) if total_matches_1v1 > 0 else 0
             round_pct_1v1     = (rounds_won_1v1 / total_rounds_1v1 * 100) if total_rounds_1v1 > 0 else 0
 
-            # --- MP calculations ---
             total_matches_mp = wins_mp + losses_mp
             total_rounds_mp  = rounds_won_mp + rounds_lost_mp
             win_pct_mp       = (wins_mp / total_matches_mp * 100) if total_matches_mp > 0 else 0
@@ -59,31 +59,43 @@ class Stats(commands.Cog):
                 'Straftcoin'
             ])
 
-        stats_message = await ctx.send(f"**Stats for {player.mention}**")
+        embed = discord.Embed(title=f'Stats — {player.display_name}', color=_PALE_GREEN)
+        embed.set_thumbnail(url=player.display_avatar.url)
 
+        embed.add_field(
+            name=f'1v1 · {rank_1v1} {emojis[0]}',
+            value=(
+                f"SP: **{sp_1v1}** · Elo: {rating_1v1:.0f}\n"
+                f"W/L: {wins_1v1}/{losses_1v1} ({win_pct_1v1:.1f}%)\n"
+                f"Rounds: {rounds_won_1v1}/{rounds_lost_1v1} ({round_pct_1v1:.1f}%)\n"
+                f"Peak: {highest_rank_1v1} {emojis[1]}"
+            ),
+            inline=True
+        )
+
+        embed.add_field(
+            name=f'Multiplayer · {rank_mp} {emojis[2]}',
+            value=(
+                f"SP: **{sp_mp}** · Elo: {rating_mp:.0f}\n"
+                f"1st/Other: {wins_mp}/{losses_mp} ({win_pct_mp:.1f}%)\n"
+                f"Rounds: {rounds_won_mp}/{rounds_lost_mp} ({round_pct_mp:.1f}%)\n"
+                f"Peak: {highest_rank_mp} {emojis[3]}"
+            ),
+            inline=True
+        )
+
+        embed.add_field(
+            name='Straftcoins',
+            value=f'**{straftcoins}** {emojis[4]}',
+            inline=False
+        )
+
+        stats_message = await ctx.send(f"**Stats for {player.mention}**")
         thread = await ctx.channel.create_thread(
             name=f'Stats for {player.display_name}',
             message=stats_message
         )
-
-        await thread.send(
-            f"**── 1v1 ──**\n"
-            f"Rank: {rank_1v1} {emojis[0]}\n"
-            f"Rating: {rating_1v1:.1f} | SP: {sp_1v1}\n"
-            f"Wins: {wins_1v1} | Losses: {losses_1v1} | Win Rate: {win_pct_1v1:.2f}%\n"
-            f"Rounds Won: {rounds_won_1v1} | Rounds Lost: {rounds_lost_1v1} | Round Win Rate: {round_pct_1v1:.2f}%\n"
-            f"Highest Rank: {highest_rank_1v1} {emojis[1]}\n"
-            f"\n"
-            f"**── Multiplayer ──**\n"
-            f"Rank: {rank_mp} {emojis[2]}\n"
-            f"Rating: {rating_mp:.1f} | SP: {sp_mp}\n"
-            f"1st Place Finishes: {wins_mp} | Non-1st Finishes: {losses_mp} | 1st Place Rate: {win_pct_mp:.2f}%\n"
-            f"Rounds Won: {rounds_won_mp} | Rounds Lost: {rounds_lost_mp} | Round Win Rate: {round_pct_mp:.2f}%\n"
-            f"Highest Rank: {highest_rank_mp} {emojis[3]}\n"
-            f"\n"
-            f"**── General ──**\n"
-            f"Straftcoin Balance: {straftcoins}{emojis[4]}\n"
-        )
+        await thread.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(Stats(bot))

@@ -30,10 +30,14 @@ def _add_vig(vig_range=(10, 15)):
     """Return a negative American odds value with house edge applied."""
     return -100 - random.randint(*vig_range)
 
+_SINGLE_REGEX      = re.compile(r'^([A-Za-z]{1,2})\s+(\d+)$')
+_PARLAY_REGEX      = re.compile(r'^([A-Za-z]{1,2})(?:\s+[A-Za-z]{1,2}){1,5}\s+\d+$', re.IGNORECASE)
+_BET_ATTEMPT_REGEX = re.compile(r'^[A-Za-z]{1,2}(?:\s+\S+)+$')
 
 class Bet(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.active_bets: dict = {}  # thread_id → {'bets_info': ..., 'player_ids': ...}
 
     @commands.command()
     async def bet(self, ctx, rounds_to_win: int, *args):
@@ -44,9 +48,9 @@ class Bet(commands.Cog):
         """
         async with aiosqlite.connect('rankings.db') as db:
 
-            # ----------------------------------------------------------------
+            
             # PARSING
-            # ----------------------------------------------------------------
+            
             if len(args) < 2:
                 await ctx.send(
                     "Invalid input: Need at least 2 players.\n"
@@ -76,17 +80,17 @@ class Bet(commands.Cog):
                 await ctx.send("Invalid input: rounds_to_win must be at least 1.")
                 return
 
-            # ----------------------------------------------------------------
+            
             # MODE + MATCH TITLE
-            # ----------------------------------------------------------------
+            
             game_mode   = '1v1' if len(players) == 2 else 'mp'
             match_title = f"[FT{rounds_to_win}] " + " vs ".join(
                 sorted(p.display_name for p in players)
             )
 
-            # ----------------------------------------------------------------
+            
             # DUPLICATE BET CHECK
-            # ----------------------------------------------------------------
+            
             bets_exist, existing_title = await check_match_titles(match_title, db)
             if bets_exist:
                 await ctx.send(
@@ -97,9 +101,9 @@ class Bet(commands.Cog):
 
             await handle_inputted_players(player_ids, db)
 
-            # ----------------------------------------------------------------
+            
             # COUNTDOWN SETUP
-            # ----------------------------------------------------------------
+            
             seconds = 120
             minutes, secs = divmod(seconds, 60)
             bot_message = await ctx.send(
@@ -111,9 +115,9 @@ class Bet(commands.Cog):
                 message=bot_message
             )
 
-            # ----------------------------------------------------------------
+            
             # WIN PROBABILITIES
-            # ----------------------------------------------------------------
+            
             if game_mode == '1v1':
                 p1, p2      = players[0], players[1]
                 p1_score    = await calc_performance_score(p1.id, p2.id, db)
@@ -127,9 +131,9 @@ class Bet(commands.Cog):
                 # calculate_mp_win_probabilities written in part 3
                 win_probs = await calculate_mp_win_probabilities(player_ids, db)
 
-            # ----------------------------------------------------------------
+            
             # SPREAD PREDICTION (1v1 only)
-            # ----------------------------------------------------------------
+            
             predicted_spread = None
             if game_mode == '1v1':
                 fav_played = await get_player_matches(db, fav.id)
@@ -146,7 +150,7 @@ class Bet(commands.Cog):
                 else:
                     predicted_spread = 4.5
 
-            # ----------------------------------------------------------------
+            
             # BUILD BETS_INFO
             # Each entry maps a letter label to all metadata needed for
             # display, restriction checking, and DB insertion.
@@ -163,7 +167,7 @@ class Bet(commands.Cog):
             #                         place this bet. Empty set = blocked for
             #                         everyone in the game.
             # }
-            # ----------------------------------------------------------------
+            
             bets_info   = {}
             def _label_generator():
                 """Yields A-Z then AA, AB, ... AZ, BA, BB, ... indefinitely."""
@@ -394,9 +398,9 @@ class Bet(commands.Cog):
                         'self_bettable_ids': others,
                     }
 
-            # ----------------------------------------------------------------
+            
             # PLAYER BALANCES EMBED
-            # ----------------------------------------------------------------
+            
             available_balances = await get_players(db)
             if available_balances:
                 embed = discord.Embed(
@@ -411,28 +415,49 @@ class Bet(commands.Cog):
                     )
                 await thread.send(embed=embed)
 
-            # ----------------------------------------------------------------
+            
             # INSTRUCTIONS
-            # ----------------------------------------------------------------
-            straftcoin_emoji = await get_emoji(['Straftcoin'])
-            await thread.send(
-                f"Welcome to the betting thread for **{match_title}**!\n"
-                f"- **Single bet**: `A 100` — label then stake.\n"
-                f"- **Parlay**: `A C 100` — labels then stake (2–6 legs, all must win).\n"
-                f"- Bets lock after 2 minutes.\n"
-                f"- Players in the match can only bet on their own positive outcomes.\n"
-                f"- No account? You start with 1000 {straftcoin_emoji[0]}."
+            
+            sc_emoji = (await get_emoji(['Straftcoin']))[0]
+            instructions_embed = discord.Embed(
+                title='Bets Are Open',
+                description=f'**{match_title}**',
+                color=discord.Color(0x90ee90)
             )
+            instructions_embed.add_field(
+                name='How to Bet',
+                value=(
+                    f'**Single:** `A 100` — label then stake\n'
+                    f'**Parlay:** `A B 100` — labels then stake (2–6 legs, all must win)'
+                ),
+                inline=False
+            )
+            instructions_embed.add_field(
+                name='Rules',
+                value=(
+                    f'Bets lock in 2 minutes\n'
+                    f'Players may only bet on their own positive outcomes\n'
+                    f'New accounts start with 1,000 {sc_emoji}'
+                ),
+                inline=False
+            )
+            await thread.send(embed=instructions_embed)
 
-            # ----------------------------------------------------------------
+            
             # ODDS DISPLAY
             # create_odds_display written in part 3
-            # ----------------------------------------------------------------
+            
             await create_odds_display(thread, bets_info, game_mode)
 
-            # ----------------------------------------------------------------
+            # Register so on_message / on_message_edit can validate during countdown
+            self.active_bets[thread.id] = {
+                'bets_info': bets_info,
+                'player_ids': player_ids,
+            }
+
+            
             # COUNTDOWN
-            # ----------------------------------------------------------------
+            
             for remaining in range(seconds - 1, -1, -1):
                 await asyncio.sleep(1)
                 minutes, secs = divmod(remaining, 60)
@@ -441,91 +466,11 @@ class Bet(commands.Cog):
                             f"**Time Remaining to Bet: {minutes:02}:{secs:02}**"
                 )
 
-            # ----------------------------------------------------------------
-            # PARLAY CONFLICT CHECKER
-            # ----------------------------------------------------------------
-            def has_parlay_conflict(leg_labels):
-                """
-                Returns True if any two legs directly contradict each other
-                or are perfectly correlated (one leg guaranteed by the other).
-                """
-                moneyline_seen  = False
-                last_place_seen = False
-                ou_total_seen   = False
-                h2h_pairs       = set()
-                ou_player_seen  = set()  # player_ids that already have an ou_player leg
+            self.active_bets.pop(thread.id, None)
 
-                ml_player       = None   # pid of the moneyline leg, if any
-                h2h_winner_pids = set()  # pids on the winning side of an H2H leg
-                h2h_loser_pids  = set()  # pids on the losing side of an H2H leg
-                podium_pids     = set()  # pids with a podium leg
-                last_place_pids = set()  # pids with a last_place leg
-
-                for lbl in leg_labels:
-                    leg = bets_info[lbl]
-                    t   = leg['type']
-                    pid = leg['player_bet_on_id']
-
-                    if t == 'moneyline':
-                        if moneyline_seen:
-                            return True
-                        moneyline_seen = True
-                        # Winning implies: podium, beats every H2H opponent, not last
-                        if (pid in podium_pids or pid in h2h_winner_pids
-                                or pid in last_place_pids or pid in h2h_loser_pids):
-                            return True
-                        ml_player = pid
-
-                    elif t == 'podium':
-                        if pid == ml_player:
-                            return True
-                        podium_pids.add(pid)
-
-                    elif t == 'head_to_head':
-                        pair    = (pid, leg['player_b_id'])
-                        reverse = (leg['player_b_id'], pid)
-                        if reverse in h2h_pairs:
-                            return True                         # A>B and B>A
-                        h2h_pairs.add(pair)
-                        if pid == ml_player:
-                            return True                         # ML winner can't also lose an H2H
-                        if leg['player_b_id'] == ml_player:
-                            return True                         # ML winner can't be beaten in H2H
-                        h2h_winner_pids.add(pid)
-                        h2h_loser_pids.add(leg['player_b_id'])
-
-                    elif t == 'last_place':
-                        if last_place_seen:
-                            return True
-                        last_place_seen = True
-                        if pid == ml_player:
-                            return True                         # can't win and finish last
-                        last_place_pids.add(pid)
-
-                    elif t == 'ou_total':
-                        if ou_total_seen:
-                            return True                         # any second ou_total leg conflicts
-                        ou_total_seen = True
-
-                    elif t == 'ou_player':
-                        if pid in ou_player_seen:
-                            return True                         # any second bet on same player's rounds
-                        ou_player_seen.add(pid)
-
-                return False
-
-            # ----------------------------------------------------------------
+            
             # COLLECT AND PROCESS BETS
-            # ----------------------------------------------------------------
-            # Single: "A 100"  — one label + stake
-            # Parlay:  "A B 100" — two-to-six labels + stake (no P prefix needed)
-            single_regex = re.compile(r'^([A-Za-z]{1,2})\s+(\d+)$')
-            parlay_regex = re.compile(
-                r'^([A-Za-z]{1,2})(?:\s+[A-Za-z]{1,2}){1,5}\s+\d+$', re.IGNORECASE
-            )
-            # Catches anything that looks like labels + a number but didn't match above
-            bet_attempt_regex = re.compile(r'^[A-Za-z]{1,2}(?:\s+\S+)+$')
-
+            
             async for message in thread.history(oldest_first=True):
                 content = message.content.strip()
                 author  = message.author
@@ -535,7 +480,7 @@ class Bet(commands.Cog):
                     continue
 
                 # ---- SINGLE BET ----
-                single_match = single_regex.match(content)
+                single_match = _SINGLE_REGEX.match(content)
                 if single_match:
                     label  = single_match.group(1).upper()
                     amount = int(single_match.group(2))
@@ -552,11 +497,14 @@ class Bet(commands.Cog):
                             if author.id in b['self_bettable_ids']
                         ]
                         allowed_str = ', '.join(allowed) if allowed else 'none'
-                        await thread.send(
-                            f"{author.mention}, as a player in this match you can only bet "
-                            f"on your own positive outcomes. "
-                            f"Your allowed bets: **{allowed_str}**. Bet not logged."
-                        )
+                        await thread.send(embed=discord.Embed(
+                            description=(
+                                f"{author.mention} — as a player in this match you can only bet "
+                                f"on your own positive outcomes. "
+                                f"Your allowed bets: **{allowed_str}**."
+                            ),
+                            color=discord.Color.red()
+                        ))
                         continue
 
                     # Delegate balance check + DB insert to bet_helpers
@@ -567,7 +515,7 @@ class Bet(commands.Cog):
                     continue
 
                 # ---- PARLAY ----
-                if parlay_regex.match(content):
+                if _PARLAY_REGEX.match(content):
                     parts      = content.split()
                     leg_labels = [p.upper() for p in parts[:-1]]
                     try:
@@ -578,26 +526,29 @@ class Bet(commands.Cog):
                     # Unknown labels
                     unknown = [l for l in leg_labels if l not in bets_info]
                     if unknown:
-                        await thread.send(
-                            f"{author.mention}, unknown bet label(s): "
-                            f"{', '.join(unknown)}. Bet not logged."
-                        )
+                        await thread.send(embed=discord.Embed(
+                            description=f"{author.mention} — unknown bet label(s): {', '.join(unknown)}.",
+                            color=discord.Color.red()
+                        ))
                         continue
 
                     # Duplicate labels
                     if len(leg_labels) != len(set(leg_labels)):
-                        await thread.send(
-                            f"{author.mention}, duplicate labels in parlay. Bet not logged."
-                        )
+                        await thread.send(embed=discord.Embed(
+                            description=f"{author.mention} — duplicate labels in parlay.",
+                            color=discord.Color.red()
+                        ))
                         continue
 
                     # Conflict check
-                    if has_parlay_conflict(leg_labels):
-                        await thread.send(
-                            f"{author.mention}, your parlay has conflicting legs "
-                            f"(e.g. two moneylines, or over + under on the same line). "
-                            f"Bet not logged."
-                        )
+                    if self._has_parlay_conflict(leg_labels, bets_info):
+                        await thread.send(embed=discord.Embed(
+                            description=(
+                                f"{author.mention} — parlay has conflicting legs "
+                                f"(e.g. two moneylines, or over + under on the same line)."
+                            ),
+                            color=discord.Color.red()
+                        ))
                         continue
 
                     # Restriction check — every leg must be self-bettable
@@ -607,11 +558,14 @@ class Bet(commands.Cog):
                             if author.id not in bets_info[l]['self_bettable_ids']
                         ]
                         if blocked:
-                            await thread.send(
-                                f"{author.mention}, your parlay includes legs you're not "
-                                f"allowed to bet as a player in this match "
-                                f"(blocked: {', '.join(blocked)}). Bet not logged."
-                            )
+                            await thread.send(embed=discord.Embed(
+                                description=(
+                                    f"{author.mention} — parlay includes legs you're not "
+                                    f"allowed to bet as a player in this match "
+                                    f"(blocked: {', '.join(blocked)})."
+                                ),
+                                color=discord.Color.red()
+                            ))
                             continue
 
                     # Delegate balance check + full DB insert to bet_helpers
@@ -625,20 +579,164 @@ class Bet(commands.Cog):
 
                 # ---- MALFORMED BET HINT ----
                 # Message didn't match single or parlay format but looks like a bet attempt
-                tokens = content.split()
-                if (len(tokens) >= 2
-                        and tokens[-1].isdigit()
-                        and re.match(r'^[A-Za-z]{1,2}$', tokens[0])):
-                    await thread.send(
-                        f"{author.mention}, bet not recognized. "
-                        f"Single: `A 100` — label then stake. "
-                        f"Parlay: `A B 100` — labels then stake (2–6 legs)."
-                    )
+                if _BET_ATTEMPT_REGEX.match(content):
+                    await thread.send(embed=discord.Embed(
+                        description=(
+                            f"{author.mention} — bet not recognized.\n"
+                            f"Single: `A 100` · Parlay: `A B 100` (2–6 legs)"
+                        ),
+                        color=discord.Color.red()
+                    ))
 
             await thread.send(
                 f"Bets for the next **{match_title}** match have been locked in."
             )
             await thread.edit(locked=True)
+
+
+    
+    # PARLAY CONFLICT CHECKER (static — shared by bet processing and validator)
+    
+    @staticmethod
+    def _has_parlay_conflict(leg_labels, bets_info):
+        moneyline_seen  = False
+        last_place_seen = False
+        ou_total_seen   = False
+        h2h_pairs       = set()
+        ou_player_seen  = set()
+        ml_player       = None
+        h2h_winner_pids = set()
+        h2h_loser_pids  = set()
+        podium_pids     = set()
+        last_place_pids = set()
+
+        for lbl in leg_labels:
+            leg = bets_info[lbl]
+            t   = leg['type']
+            pid = leg['player_bet_on_id']
+
+            if t == 'moneyline':
+                if moneyline_seen:
+                    return True
+                moneyline_seen = True
+                if (pid in podium_pids or pid in h2h_winner_pids
+                        or pid in last_place_pids or pid in h2h_loser_pids):
+                    return True
+                ml_player = pid
+            elif t == 'podium':
+                if pid == ml_player:
+                    return True
+                podium_pids.add(pid)
+            elif t == 'head_to_head':
+                pair    = (pid, leg['player_b_id'])
+                reverse = (leg['player_b_id'], pid)
+                if reverse in h2h_pairs:
+                    return True
+                h2h_pairs.add(pair)
+                if pid == ml_player or leg['player_b_id'] == ml_player:
+                    return True
+                h2h_winner_pids.add(pid)
+                h2h_loser_pids.add(leg['player_b_id'])
+            elif t == 'last_place':
+                if last_place_seen:
+                    return True
+                last_place_seen = True
+                if pid == ml_player:
+                    return True
+                last_place_pids.add(pid)
+            elif t == 'ou_total':
+                if ou_total_seen:
+                    return True
+                ou_total_seen = True
+            elif t == 'ou_player':
+                if pid in ou_player_seen:
+                    return True
+                ou_player_seen.add(pid)
+
+        return False
+
+    
+    # REAL-TIME BET VALIDATOR
+    
+    def _validate_bet(self, content, author_id, state):
+        """
+        Returns (True, None) for valid, (False, reason) for invalid,
+        (None, None) if the message doesn't look like a bet.
+        """
+        bets_info  = state['bets_info']
+        player_ids = state['player_ids']
+        in_game    = author_id in player_ids
+
+        content = content.strip()
+        if not _BET_ATTEMPT_REGEX.match(content):
+            return None, None
+
+        single_match = _SINGLE_REGEX.match(content)
+        if single_match:
+            label = single_match.group(1).upper()
+            if label not in bets_info:
+                return False, f"Unknown label `{label}`."
+            if in_game and author_id not in bets_info[label]['self_bettable_ids']:
+                allowed = [lbl for lbl, b in bets_info.items() if author_id in b['self_bettable_ids']]
+                return False, f"Restricted. Allowed: {', '.join(allowed) or 'none'}."
+            return True, None
+
+        if _PARLAY_REGEX.match(content):
+            parts      = content.split()
+            leg_labels = [p.upper() for p in parts[:-1]]
+            try:
+                int(parts[-1])
+            except ValueError:
+                return False, "Invalid stake."
+            unknown = [l for l in leg_labels if l not in bets_info]
+            if unknown:
+                return False, f"Unknown label(s): {', '.join(unknown)}."
+            if len(leg_labels) != len(set(leg_labels)):
+                return False, "Duplicate labels."
+            if self._has_parlay_conflict(leg_labels, bets_info):
+                return False, "Conflicting legs."
+            if in_game:
+                blocked = [l for l in leg_labels if author_id not in bets_info[l]['self_bettable_ids']]
+                if blocked:
+                    return False, f"Blocked legs: {', '.join(blocked)}."
+            return True, None
+
+        return False, "Malformed bet."
+
+    
+    # LIVE VALIDATION LISTENERS
+    
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        if message.author.bot:
+            return
+        state = self.active_bets.get(message.channel.id)
+        if state is None:
+            return
+        valid, _ = self._validate_bet(message.content, message.author.id, state)
+        if valid is True:
+            await message.add_reaction('✅')
+        elif valid is False:
+            await message.add_reaction('❌')
+
+    @commands.Cog.listener()
+    async def on_message_edit(self, before, after):
+        if after.author.bot:
+            return
+        state = self.active_bets.get(after.channel.id)
+        if state is None:
+            return
+        me = self.bot.user
+        for emoji in ('✅', '❌'):
+            try:
+                await after.remove_reaction(emoji, me)
+            except (discord.HTTPException, discord.NotFound):
+                pass
+        valid, _ = self._validate_bet(after.content, after.author.id, state)
+        if valid is True:
+            await after.add_reaction('✅')
+        elif valid is False:
+            await after.add_reaction('❌')
 
 
 async def setup(bot):
