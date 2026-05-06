@@ -4,6 +4,7 @@ import asyncio
 import re
 import aiosqlite
 import random
+import string
 from itertools import combinations
 from model_helpers import predict_variable
 from bet_helpers import (
@@ -79,7 +80,9 @@ class Bet(commands.Cog):
             # MODE + MATCH TITLE
             # ----------------------------------------------------------------
             game_mode   = '1v1' if len(players) == 2 else 'mp'
-            match_title = " vs ".join(p.display_name for p in players)
+            match_title = f"[FT{rounds_to_win}] " + " vs ".join(
+                sorted(p.display_name for p in players)
+            )
 
             # ----------------------------------------------------------------
             # DUPLICATE BET CHECK
@@ -159,10 +162,19 @@ class Bet(commands.Cog):
             # }
             # ----------------------------------------------------------------
             bets_info   = {}
-            label_pool  = iter('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+            def _label_generator():
+                """Yields A-Z then AA, AB, ... AZ, BA, BB, ... indefinitely."""
+                letters = string.ascii_uppercase
+                for c in letters:
+                    yield c
+                for first in letters:
+                    for second in letters:
+                        yield first + second
+
+            label_gen = _label_generator()
 
             def next_label():
-                return next(label_pool)
+                return next(label_gen)
 
             if game_mode == '1v1':
                 # -- Odds --
@@ -481,8 +493,8 @@ class Bet(commands.Cog):
             # ----------------------------------------------------------------
             # COLLECT AND PROCESS BETS
             # ----------------------------------------------------------------
-            single_regex = re.compile(r'^([A-Za-z])\s+(\d+)$')
-            parlay_regex = re.compile(r'^P(?:\s+[A-Za-z]){2,6}\s+\d+$', re.IGNORECASE)
+            single_regex = re.compile(r'^([A-Za-z]{1,2})\s+(\d+)$')
+            parlay_regex = re.compile(r'^P(?:\s+[A-Za-z]{1,2}){2,6}\s+\d+$', re.IGNORECASE)
 
             collected_single_bets = []
 

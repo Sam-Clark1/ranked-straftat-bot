@@ -5,3 +5,5 @@ temp.py
 /__pycache__
 /cogs/__pycache__
 /cogs/dumb.py
+.claude
+rankings_OLD.db

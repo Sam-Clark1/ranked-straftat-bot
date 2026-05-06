@@ -85,7 +85,11 @@ async def create_odds_display(thread, bets_info, game_mode):
         rows.append(('', section_title, '', True))
         for lbl, meta in sections[type_key]:
             odds_str = _format_odds(meta['odds'])
-            rows.append((lbl, meta['display'], odds_str, False))
+            # Append the line value to the description for relevant bet types
+            description = meta['display']
+            if meta['type'] in ('spread', 'ou_total', 'ou_player'):
+                description = f"{description}  {meta['value']}"
+            rows.append((lbl, description, odds_str, False))
 
     if not rows:
         return
@@ -123,7 +127,6 @@ async def create_odds_display(thread, bets_info, game_mode):
                     color=TEXT, fontsize=8.5, fontweight='bold',
                     va='center', ha='left')
         else:
-            odds_color = ODDS_POS if odds_str.startswith('+') else ODDS_NEG
 
             ax.text(xs[0], y + row_h * 0.3, label,
                     transform=ax.transAxes,
@@ -133,13 +136,13 @@ async def create_odds_display(thread, bets_info, game_mode):
                     color=TEXT, fontsize=8.5, va='center', ha='left')
             ax.text(xs[2], y + row_h * 0.3, odds_str,
                     transform=ax.transAxes,
-                    color=odds_color, fontsize=8.5,
+                    color=TEXT, fontsize=8.5,
                     fontweight='bold', va='center', ha='left')
 
             # Light separator line
-            ax.axhline(y=y, xmin=0, xmax=1,
-                       color='#40444b', linewidth=0.4,
-                       transform=ax.transAxes)
+            ax.plot([0, 1], [y, y],
+                color='#40444b', linewidth=0.4,
+                transform=ax.transAxes)
 
         y_start -= row_h
 
@@ -336,10 +339,6 @@ async def handle_parlay_placement(match_title, leg_labels, stake, bets_info, thr
 # ─────────────────────────────────────────────
 
 async def check_match_titles(match_title, db):
-    """
-    Returns (bets, match_title). Checks the exact title only
-    since titles are now constructed deterministically in bet.py.
-    """
     async with db.execute(
         "SELECT * FROM live_bets WHERE match_title = ?", (match_title,)
     ) as cursor:
@@ -482,25 +481,19 @@ async def win_loss_determination(bets, match_id, spread, winner_id, total_rounds
 # BET PAYOUTS
 # ─────────────────────────────────────────────
 
-async def handle_bet_payouts(match_id, participant_ids, winner_id, spread, total_rounds, db):
+async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rounds, db):
     """
     Finds live bets for a match by participant IDs, resolves all bet types,
     settles parlays, and returns a formatted settlement message.
     """
     try:
-        # Find match title from any live bet on a participant
-        placeholders = ','.join('?' * len(participant_ids))
         async with db.execute(
-            f"SELECT match_title FROM live_bets "
-            f"WHERE player_bet_on_id IN ({placeholders}) LIMIT 1",
-            participant_ids
+            "SELECT COUNT(*) FROM live_bets WHERE match_title = ?", (match_title,)
         ) as cursor:
-            title_row = await cursor.fetchone()
+            count_row = await cursor.fetchone()
 
-        if not title_row:
+        if not count_row or count_row[0] == 0:
             return False
-
-        match_title = title_row[0]
 
         # Fetch ALL live bets for this match (includes O/U total with NULL player_bet_on_id)
         async with db.execute(

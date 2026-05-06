@@ -147,37 +147,29 @@ async def predict_variable(player1_id, player2_id, predicted_variable, db):
     return pred_variable1
 
 async def train_models(predicted_variable, db):
-    
-    # Fetch data
-    matches_df, players_df = await fetch_data(db)
 
-    # Prepare features and target
+    matches_df, players_df = await fetch_data(db)
     X, y = await prepare_features(matches_df, players_df, predicted_variable)
 
-    # Train-test split
+    # Need enough samples to split into train and test sets.
+    # Below this threshold the model wouldn't be meaningful anyway.
+    if len(X) < 10:
+        print(f"Skipping model training — only {len(X)} sample(s) available, need at least 10.")
+        return
+
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Convert to DMatrix
     dtrain = xgb.DMatrix(X_train, label=y_train)
-    dtest = xgb.DMatrix(X_test, label=y_test)
+    dtest  = xgb.DMatrix(X_test,  label=y_test)
 
-    # Set parameters for training
     params = {
-        "objective": "reg:squarederror",
+        "objective":     "reg:squarederror",
         "learning_rate": 0.1,
-        "max_depth": 5,
-        "seed": 42,
+        "max_depth":     5,
+        "seed":          42,
     }
-    num_boost_round = 100
 
-    # Train the model
-    booster = xgb.train(
-        params, 
-        dtrain, 
-        num_boost_round=num_boost_round, 
-        # evals=[(dtest, "test")],
-        verbose_eval=True
-    )
+    booster = xgb.train(params, dtrain, num_boost_round=100, verbose_eval=False)
 
     if predicted_variable == 'spread':
         booster.save_model("spread_model.booster")
