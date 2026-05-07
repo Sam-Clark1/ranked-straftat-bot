@@ -68,22 +68,15 @@ async def prepare_features(matches_df_init, players_df_init, predicted_variable)
         matches_df[f'winner_{short}'] = matches_df['winner_id'].map(players_df[stat])
         matches_df[f'loser_{short}']  = matches_df['loser_id'].map(players_df[stat])
 
-    matches_df['winner_win_rate'] = (
-        matches_df['winner_wins'] /
-        (matches_df['winner_wins'] + matches_df['winner_losses'])
-    )
-    matches_df['loser_win_rate'] = (
-        matches_df['loser_wins'] /
-        (matches_df['loser_wins'] + matches_df['loser_losses'])
-    )
-    matches_df['winner_round_rate'] = (
-        matches_df['winner_rounds_won'] /
-        (matches_df['winner_rounds_won'] + matches_df['winner_rounds_lost'])
-    )
-    matches_df['loser_round_rate'] = (
-        matches_df['loser_rounds_won'] /
-        (matches_df['loser_rounds_won'] + matches_df['loser_rounds_lost'])
-    )
+    w_matches = matches_df['winner_wins']   + matches_df['winner_losses']
+    l_matches = matches_df['loser_wins']    + matches_df['loser_losses']
+    w_rounds  = matches_df['winner_rounds_won'] + matches_df['winner_rounds_lost']
+    l_rounds  = matches_df['loser_rounds_won']  + matches_df['loser_rounds_lost']
+
+    matches_df['winner_win_rate']   = (matches_df['winner_wins']      / w_matches).where(w_matches > 0, 0.5)
+    matches_df['loser_win_rate']    = (matches_df['loser_wins']       / l_matches).where(l_matches > 0, 0.5)
+    matches_df['winner_round_rate'] = (matches_df['winner_rounds_won'] / w_rounds).where(w_rounds  > 0, 0.5)
+    matches_df['loser_round_rate']  = (matches_df['loser_rounds_won']  / l_rounds).where(l_rounds  > 0, 0.5)
 
     features = [
         'winner_rating', 'loser_rating', 'elo_diff', 'sp_diff',
@@ -105,33 +98,28 @@ async def predict_variable(player1_id, player2_id, predicted_variable, db):
 
     def prepare_new_data(winner_id, loser_id):
         player_stats = players_df.set_index("user_id")
+
+        def win_rate(pid):
+            w = player_stats.loc[pid, "wins_1v1"]
+            l = player_stats.loc[pid, "losses_1v1"]
+            return w / (w + l) if (w + l) > 0 else 0.5
+
+        def round_rate(pid):
+            rw = player_stats.loc[pid, "rounds_won_1v1"]
+            rl = player_stats.loc[pid, "rounds_lost_1v1"]
+            return rw / (rw + rl) if (rw + rl) > 0 else 0.5
+
         new_data = pd.DataFrame({
-            "winner_rating": [player_stats.loc[winner_id, "rating_1v1"]],
-            "loser_rating":  [player_stats.loc[loser_id,  "rating_1v1"]],
-            "elo_diff": [abs(
-                player_stats.loc[winner_id, "rating_1v1"] -
-                player_stats.loc[loser_id,  "rating_1v1"]
-            )],
-            "sp_diff": [abs(
-                player_stats.loc[winner_id, "sp_1v1"] -
-                player_stats.loc[loser_id,  "sp_1v1"]
-            )],
-            "winner_win_rate": [
-                player_stats.loc[winner_id, "wins_1v1"] /
-                (player_stats.loc[winner_id, "wins_1v1"] + player_stats.loc[winner_id, "losses_1v1"])
-            ],
-            "loser_win_rate": [
-                player_stats.loc[loser_id, "wins_1v1"] /
-                (player_stats.loc[loser_id, "wins_1v1"] + player_stats.loc[loser_id, "losses_1v1"])
-            ],
-            "winner_round_rate": [
-                player_stats.loc[winner_id, "rounds_won_1v1"] /
-                (player_stats.loc[winner_id, "rounds_won_1v1"] + player_stats.loc[winner_id, "rounds_lost_1v1"])
-            ],
-            "loser_round_rate": [
-                player_stats.loc[loser_id, "rounds_won_1v1"] /
-                (player_stats.loc[loser_id, "rounds_won_1v1"] + player_stats.loc[loser_id, "rounds_lost_1v1"])
-            ],
+            "winner_rating":    [player_stats.loc[winner_id, "rating_1v1"]],
+            "loser_rating":     [player_stats.loc[loser_id,  "rating_1v1"]],
+            "elo_diff":         [abs(player_stats.loc[winner_id, "rating_1v1"] -
+                                     player_stats.loc[loser_id,  "rating_1v1"])],
+            "sp_diff":          [abs(player_stats.loc[winner_id, "sp_1v1"] -
+                                     player_stats.loc[loser_id,  "sp_1v1"])],
+            "winner_win_rate":  [win_rate(winner_id)],
+            "loser_win_rate":   [win_rate(loser_id)],
+            "winner_round_rate":[round_rate(winner_id)],
+            "loser_round_rate": [round_rate(loser_id)],
         })
         return xgb.DMatrix(new_data)
 

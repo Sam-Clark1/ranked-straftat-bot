@@ -2,6 +2,7 @@ import discord
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import pandas as pd
 from io import BytesIO
 import math
 from command_helpers import get_straftcoin, get_emoji, get_rating
@@ -48,29 +49,80 @@ def _format_odds(odds):
 # ODDS DISPLAY IMAGE
 # ─────────────────────────────────────────────
 
-async def create_odds_display(thread, bets_info, game_mode):
-    """
-    Generates a sectioned vertical odds table image and sends it to the thread.
-    Sections are grouped by bet type. Each row: Label | Description | Odds
-    """
-    BG          = '#2f3136'
-    HEADER_BG   = '#4f545c'
-    TEXT        = '#ffffff'
-    ODDS_POS    = '#57f287'   # green for underdog/positive odds
-    ODDS_NEG    = '#ed4245'   # red for favorite/negative odds
+def _build_1v1_odds_image(bets_info):
+    bg_color            = '#40444b'
+    text_gridline_color = '#FFFFFF'
 
-    # Section ordering and display names
+    # bets_info order for 1v1: A=fav spread, B=fav ML, C=OU over,
+    #                           D=dog spread, E=dog ML, F=OU under
+    items = list(bets_info.items())
+    a_lbl, a = items[0]  # fav spread
+    b_lbl, b = items[1]  # fav ML
+    c_lbl, c = items[2]  # OU over
+    d_lbl, d = items[3]  # dog spread
+    e_lbl, e = items[4]  # dog ML
+    f_lbl, f = items[5]  # OU under
+
+    fav_name = a['display'].replace(' Spread', '')
+    dog_name = d['display'].replace(' Spread', '')
+
+    data = [
+        [fav_name,
+         f'{a_lbl}\n{a["value"]}\n{_format_odds(a["odds"])}',
+         f'{b_lbl}\n\n{_format_odds(b["odds"])}',
+         f'{c_lbl}\n{c["value"]}\n{_format_odds(c["odds"])}'],
+        [dog_name,
+         f'{d_lbl}\n{d["value"]}\n{_format_odds(d["odds"])}',
+         f'{e_lbl}\n\n{_format_odds(e["odds"])}',
+         f'{f_lbl}\n{f["value"]}\n{_format_odds(f["odds"])}'],
+    ]
+    columns = ['Player', 'Spread', 'Moneyline', 'O/U']
+
+    df = pd.DataFrame(data, columns=columns)
+
+    fig, ax = plt.subplots(figsize=(6, len(data) + 1), facecolor=bg_color)
+    ax.axis('tight')
+    ax.axis('off')
+
+    table = ax.table(cellText=df.values,
+                     colLabels=df.columns,
+                     cellLoc='center',
+                     loc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(12)
+    table.auto_set_column_width(col=list(range(len(columns))))
+
+    for key, cell in table.get_celld().items():
+        cell.set_height(0.3)
+        cell.set_edgecolor(text_gridline_color)
+        if key[0] == 0:
+            cell.set_facecolor(bg_color)
+            cell.set_text_props(color=text_gridline_color, weight='bold')
+        else:
+            cell.set_facecolor(bg_color)
+            cell.set_text_props(color=text_gridline_color)
+
+    buf = BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight', dpi=500)
+    buf.seek(0)
+    plt.close(fig)
+    return buf
+
+
+def _build_mp_odds_image(bets_info):
+    BG        = '#2f3136'
+    HEADER_BG = '#4f545c'
+    TEXT      = '#ffffff'
+
     SECTION_ORDER = [
-        ('spread',      '── Spread ──'),
-        ('moneyline',   '── Moneyline ──'),
-        ('head_to_head','── Head-to-Head ──'),
-        ('podium',      '── Podium (Top 3) ──'),
-        ('last_place',  '── Last Place ──'),
-        ('ou_total',    '── Over/Under Total Rounds ──'),
-        ('ou_player',   '── Over/Under Player Rounds ──'),
+        ('moneyline',    '── Moneyline ──'),
+        ('head_to_head', '── Head-to-Head ──'),
+        ('podium',       '── Podium (Top 3) ──'),
+        ('last_place',   '── Last Place ──'),
+        ('ou_total',     '── Over/Under Total Rounds ──'),
+        ('ou_player',    '── Over/Under Player Rounds ──'),
     ]
 
-    # Group bets by type, preserving label order within each section
     sections = {}
     for lbl, meta in bets_info.items():
         t = meta['type']
@@ -78,83 +130,67 @@ async def create_odds_display(thread, bets_info, game_mode):
             sections[t] = []
         sections[t].append((lbl, meta))
 
-    # Build flat row list with section headers interleaved
-    rows        = []   # (label, description, odds_str, is_header)
+    rows = []
     for type_key, section_title in SECTION_ORDER:
         if type_key not in sections:
             continue
         rows.append(('', section_title, '', True))
         for lbl, meta in sections[type_key]:
-            odds_str = _format_odds(meta['odds'])
-            # Append the line value to the description for relevant bet types
             description = meta['display']
-            if meta['type'] in ('spread', 'ou_total', 'ou_player'):
+            if meta['type'] in ('ou_total', 'ou_player'):
                 description = f"{description}  {meta['value']}"
-            rows.append((lbl, description, odds_str, False))
+            rows.append((lbl, description, _format_odds(meta['odds']), False))
 
     if not rows:
-        return
+        return None
 
     fig_height = max(3, len(rows) * 0.5 + 1)
     fig, ax = plt.subplots(figsize=(7, fig_height), facecolor=BG)
     ax.set_facecolor(BG)
     ax.axis('off')
 
-    col_widths  = [0.08, 0.62, 0.30]
-    col_labels  = ['', 'Bet', 'Odds']
-    y_start     = 0.97
-    row_h       = 1 / (len(rows) + 2)
+    xs    = [0.01, 0.10, 0.75]
+    row_h = 1 / (len(rows) + 2)
+    y     = 0.97
 
-    # Column headers
-    xs = [0.01, 0.10, 0.75]
-    for i, (cx, cl) in enumerate(zip(xs, col_labels)):
-        ax.text(cx, y_start, cl, transform=ax.transAxes,
-                color=TEXT, fontsize=9, fontweight='bold',
-                va='top', ha='left')
-
-    y_start -= row_h * 0.8
+    for col_x, col_label in zip(xs, ['', 'Bet', 'Odds']):
+        ax.text(col_x, y, col_label, transform=ax.transAxes,
+                color=TEXT, fontsize=9, fontweight='bold', va='top', ha='left')
+    y -= row_h * 0.8
 
     for label, description, odds_str, is_header in rows:
-        y = y_start
-
         if is_header:
-            # Draw a filled rectangle as section header background
             rect = plt.Rectangle((0, y - row_h * 0.15), 1, row_h * 0.85,
-                                  transform=ax.transAxes,
-                                  color=HEADER_BG, zorder=0)
+                                  transform=ax.transAxes, color=HEADER_BG, zorder=0)
             ax.add_patch(rect)
-            ax.text(0.01, y + row_h * 0.5, description,
-                    transform=ax.transAxes,
-                    color=TEXT, fontsize=8.5, fontweight='bold',
-                    va='center', ha='left')
+            ax.text(0.01, y + row_h * 0.5, description, transform=ax.transAxes,
+                    color=TEXT, fontsize=8.5, fontweight='bold', va='center', ha='left')
         else:
-
-            ax.text(xs[0], y + row_h * 0.3, label,
-                    transform=ax.transAxes,
+            ax.text(xs[0], y + row_h * 0.3, label,       transform=ax.transAxes,
                     color=TEXT, fontsize=8.5, va='center', ha='left')
-            ax.text(xs[1], y + row_h * 0.3, description,
-                    transform=ax.transAxes,
+            ax.text(xs[1], y + row_h * 0.3, description, transform=ax.transAxes,
                     color=TEXT, fontsize=8.5, va='center', ha='left')
-            ax.text(xs[2], y + row_h * 0.3, odds_str,
-                    transform=ax.transAxes,
-                    color=TEXT, fontsize=8.5,
-                    fontweight='bold', va='center', ha='left')
-
-            # Light separator line
-            ax.plot([0, 1], [y, y],
-                color='#40444b', linewidth=0.4,
-                transform=ax.transAxes)
-
-        y_start -= row_h
+            ax.text(xs[2], y + row_h * 0.3, odds_str,    transform=ax.transAxes,
+                    color=TEXT, fontsize=8.5, fontweight='bold', va='center', ha='left')
+            ax.plot([0, 1], [y, y], color='#40444b', linewidth=0.4, transform=ax.transAxes)
+        y -= row_h
 
     plt.tight_layout(pad=0.3)
     buf = BytesIO()
-    plt.savefig(buf, format='png', bbox_inches='tight',
-                dpi=150, facecolor=BG)
+    plt.savefig(buf, format='png', bbox_inches='tight', dpi=150, facecolor=BG)
     buf.seek(0)
     plt.close(fig)
+    return buf
 
-    await thread.send(file=__import__('discord').File(fp=buf, filename='odds.png'))
+
+async def create_odds_display(thread, bets_info, game_mode):
+    if game_mode == '1v1':
+        buf = _build_1v1_odds_image(bets_info)
+    else:
+        buf = _build_mp_odds_image(bets_info)
+
+    if buf:
+        await thread.send(file=discord.File(fp=buf, filename='odds.png'))
 
 
 # ─────────────────────────────────────────────

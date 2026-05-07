@@ -188,10 +188,9 @@ class Bet(commands.Cog):
                 fav_ml_odds  = await percentage_to_odds(win_probs[fav.id])
                 dog_ml_odds  = await percentage_to_odds(win_probs[dog.id])
 
-                ou_total_line  = round((rounds_to_win * 2) - predicted_spread - 0.5, 1)
-                ou_player_line = round(rounds_to_win - predicted_spread - 0.5, 1)
+                ou_total_line = round((rounds_to_win * 2) - predicted_spread - 0.5, 1)
 
-                # Spread — favorite
+                # A: Spread — favorite
                 bets_info[next_label()] = {
                     'type': 'spread',
                     'display': f"{fav.display_name} Spread",
@@ -201,17 +200,7 @@ class Bet(commands.Cog):
                     'player_b_id': None,
                     'self_bettable_ids': {fav.id},
                 }
-                # Spread — underdog
-                bets_info[next_label()] = {
-                    'type': 'spread',
-                    'display': f"{dog.display_name} Spread",
-                    'value': f'+{predicted_spread}',
-                    'odds': _add_vig((0, 10)),
-                    'player_bet_on_id': dog.id,
-                    'player_b_id': None,
-                    'self_bettable_ids': {dog.id},
-                }
-                # Moneyline — favorite
+                # B: Moneyline — favorite
                 bets_info[next_label()] = {
                     'type': 'moneyline',
                     'display': f"{fav.display_name} ML",
@@ -221,7 +210,27 @@ class Bet(commands.Cog):
                     'player_b_id': None,
                     'self_bettable_ids': {fav.id},
                 }
-                # Moneyline — underdog
+                # C: O/U total rounds — over
+                bets_info[next_label()] = {
+                    'type': 'ou_total',
+                    'display': 'O/U Total Rounds',
+                    'value': f'O{ou_total_line}',
+                    'odds': _add_vig((11, 15)),
+                    'player_bet_on_id': None,
+                    'player_b_id': None,
+                    'self_bettable_ids': set(),
+                }
+                # D: Spread — underdog
+                bets_info[next_label()] = {
+                    'type': 'spread',
+                    'display': f"{dog.display_name} Spread",
+                    'value': f'+{predicted_spread}',
+                    'odds': _add_vig((0, 10)),
+                    'player_bet_on_id': dog.id,
+                    'player_b_id': None,
+                    'self_bettable_ids': {dog.id},
+                }
+                # E: Moneyline — underdog
                 bets_info[next_label()] = {
                     'type': 'moneyline',
                     'display': f"{dog.display_name} ML",
@@ -231,45 +240,13 @@ class Bet(commands.Cog):
                     'player_b_id': None,
                     'self_bettable_ids': {dog.id},
                 }
-                # O/U total rounds — over
-                bets_info[next_label()] = {
-                    'type': 'ou_total',
-                    'display': 'O/U Total Rounds',
-                    'value': f'O{ou_total_line}',
-                    'odds': _add_vig((11, 15)),
-                    'player_bet_on_id': None,
-                    'player_b_id': None,
-                    'self_bettable_ids': set(),     # nobody in game
-                }
-                # O/U total rounds — under
+                # F: O/U total rounds — under
                 bets_info[next_label()] = {
                     'type': 'ou_total',
                     'display': 'O/U Total Rounds',
                     'value': f'U{ou_total_line}',
                     'odds': _add_vig((0, 10)),
                     'player_bet_on_id': None,
-                    'player_b_id': None,
-                    'self_bettable_ids': set(),
-                }
-                # O/U loser rounds — over
-                # Winner always gets exactly rounds_to_win so only the
-                # loser's round count is an interesting per-player market.
-                bets_info[next_label()] = {
-                    'type': 'ou_player',
-                    'display': f"O/U {dog.display_name} Rounds",
-                    'value': f'O{ou_player_line}',
-                    'odds': _add_vig((5, 15)),
-                    'player_bet_on_id': dog.id,
-                    'player_b_id': None,
-                    'self_bettable_ids': set(),     # nobody in game
-                }
-                # O/U loser rounds — under
-                bets_info[next_label()] = {
-                    'type': 'ou_player',
-                    'display': f"O/U {dog.display_name} Rounds",
-                    'value': f'U{ou_player_line}',
-                    'odds': _add_vig((5, 15)),
-                    'player_bet_on_id': dog.id,
                     'player_b_id': None,
                     'self_bettable_ids': set(),
                 }
@@ -602,9 +579,11 @@ class Bet(commands.Cog):
         moneyline_seen  = False
         last_place_seen = False
         ou_total_seen   = False
+        spread_seen     = False
         h2h_pairs       = set()
         ou_player_seen  = set()
         ml_player       = None
+        fav_spread_pid  = None  # set when a '-' (favorite) spread leg is present
         h2h_winner_pids = set()
         h2h_loser_pids  = set()
         podium_pids     = set()
@@ -622,7 +601,24 @@ class Bet(commands.Cog):
                 if (pid in podium_pids or pid in h2h_winner_pids
                         or pid in last_place_pids or pid in h2h_loser_pids):
                     return True
+                # Fav spread already present — conflicts with any ML:
+                #   fav ML + fav spread: correlated (covering spread guarantees ML win)
+                #   dog ML + fav spread: impossible (if fav covers, dog can't have won)
+                if fav_spread_pid is not None:
+                    return True
                 ml_player = pid
+
+            elif t == 'spread':
+                if spread_seen:
+                    return True  # Two spread legs are always mutually exclusive in 1v1
+                spread_seen = True
+                if leg['value'][0] == '-':  # Favorite covers spread
+                    fav_spread_pid = pid
+                    # ML already set — conflicts in both directions (see moneyline block above)
+                    if ml_player is not None:
+                        return True
+                # Dog spread ('+') can coexist with either ML, so no extra check needed
+
             elif t == 'podium':
                 if pid == ml_player:
                     return True
