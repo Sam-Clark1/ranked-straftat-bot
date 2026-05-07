@@ -1,26 +1,93 @@
-import pandas as pd
+import discord
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import pandas as pd
 from io import BytesIO
 import math
-from command_helpers import get_straftcoin, get_emoji
+from command_helpers import get_straftcoin, get_emoji, get_rating
 
-async def create_table_image(data, columns, file_name="table.png"):
-    bg_color = '#40444b'
+
+# ─────────────────────────────────────────────
+# ODDS UTILITIES
+# ─────────────────────────────────────────────
+
+async def percentage_to_odds(percent_odds):
+    percent_odds = max(0.01, min(0.99, percent_odds))
+    if percent_odds >= 0.5:
+        odds = ((percent_odds * 100) / (1 - percent_odds)) * -1
+    else:
+        odds = (100 / percent_odds) - 100
+    return round(odds)
+
+
+async def odds_to_percentage(w_or_l_or_p, bet_odds, bet_amount):
+    if w_or_l_or_p == 'win':
+        if bet_odds < 0:
+            pct = 1 - (100 / bet_odds)
+        else:
+            pct = 1 + (bet_odds / 100)
+        return round(bet_amount * pct), 0
+    elif w_or_l_or_p == 'loss':
+        return 0, bet_amount
+    else:
+        return 0, 0
+
+
+def _american_to_decimal(odds):
+    if odds < 0:
+        return 1 + (100 / abs(odds))
+    else:
+        return 1 + (odds / 100)
+
+
+def _format_odds(odds):
+    return f"+{odds}" if odds > 0 else str(odds)
+
+
+# ─────────────────────────────────────────────
+# ODDS DISPLAY IMAGE
+# ─────────────────────────────────────────────
+
+def _build_1v1_odds_image(bets_info):
+    bg_color            = '#40444b'
     text_gridline_color = '#FFFFFF'
 
-    # Create a DataFrame
+    # bets_info order for 1v1: A=fav spread, B=fav ML, C=OU over,
+    #                           D=dog spread, E=dog ML, F=OU under
+    items = list(bets_info.items())
+    a_lbl, a = items[0]  # fav spread
+    b_lbl, b = items[1]  # fav ML
+    c_lbl, c = items[2]  # OU over
+    d_lbl, d = items[3]  # dog spread
+    e_lbl, e = items[4]  # dog ML
+    f_lbl, f = items[5]  # OU under
+
+    fav_name = a['display'].replace(' Spread', '')
+    dog_name = d['display'].replace(' Spread', '')
+
+    data = [
+        [fav_name,
+         f'{a_lbl}\n{a["value"]}\n{_format_odds(a["odds"])}',
+         f'{b_lbl}\n\n{_format_odds(b["odds"])}',
+         f'{c_lbl}\n{c["value"]}\n{_format_odds(c["odds"])}'],
+        [dog_name,
+         f'{d_lbl}\n{d["value"]}\n{_format_odds(d["odds"])}',
+         f'{e_lbl}\n\n{_format_odds(e["odds"])}',
+         f'{f_lbl}\n{f["value"]}\n{_format_odds(f["odds"])}'],
+    ]
+    columns = ['Player', 'Spread', 'Moneyline', 'O/U']
+
     df = pd.DataFrame(data, columns=columns)
 
-    # Create a Matplotlib figure and axis
     fig, ax = plt.subplots(figsize=(6, len(data) + 1), facecolor=bg_color)
     ax.axis('tight')
     ax.axis('off')
 
-    # Create a table plot
-    table = ax.table(cellText=df.values, 
-                        colLabels=df.columns, 
-                        cellLoc='center', 
-                        loc='center')
+    table = ax.table(cellText=df.values,
+                     colLabels=df.columns,
+                     cellLoc='center',
+                     loc='center')
     table.auto_set_font_size(False)
     table.set_fontsize(12)
     table.auto_set_column_width(col=list(range(len(columns))))
@@ -28,7 +95,6 @@ async def create_table_image(data, columns, file_name="table.png"):
     for key, cell in table.get_celld().items():
         cell.set_height(0.3)
         cell.set_edgecolor(text_gridline_color)
-
         if key[0] == 0:
             cell.set_facecolor(bg_color)
             cell.set_text_props(color=text_gridline_color, weight='bold')
@@ -36,387 +102,777 @@ async def create_table_image(data, columns, file_name="table.png"):
             cell.set_facecolor(bg_color)
             cell.set_text_props(color=text_gridline_color)
 
-    # Save the table to an image file
     buf = BytesIO()
     plt.savefig(buf, format='png', bbox_inches='tight', dpi=500)
     buf.seek(0)
-
+    plt.close(fig)
     return buf
 
-async def handle_bet_placements(match_title, favorite, underdog, match, thread, message, bets_info, db):
-    
-    user_id = message.author.id
-    bet_amount = int(match.group(2))
-    emojis = await get_emoji(['Straftcoin'])
 
-    async def bet_to_tuple():
-        option_value = match.group(1).upper()
+def _build_mp_odds_image(bets_info):
+    BG        = '#2f3136'
+    HEADER_BG = '#4f545c'
+    TEXT      = '#ffffff'
 
-        if option_value=='A' or option_value=='B':
-            playerid_bet_on = favorite
-        elif option_value=='D' or option_value=='E':
-            playerid_bet_on = underdog
+    SECTION_ORDER = [
+        ('moneyline',    '── Moneyline ──'),
+        ('head_to_head', '── Head-to-Head ──'),
+        ('podium',       '── Podium (Top 3) ──'),
+        ('last_place',   '── Last Place ──'),
+        ('ou_total',     '── Over/Under Total Rounds ──'),
+        ('ou_player',    '── Over/Under Player Rounds ──'),
+    ]
+
+    sections = {}
+    for lbl, meta in bets_info.items():
+        t = meta['type']
+        if t not in sections:
+            sections[t] = []
+        sections[t].append((lbl, meta))
+
+    rows = []
+    for type_key, section_title in SECTION_ORDER:
+        if type_key not in sections:
+            continue
+        rows.append(('', section_title, '', True))
+        for lbl, meta in sections[type_key]:
+            description = meta['display']
+            if meta['type'] in ('ou_total', 'ou_player'):
+                description = f"{description}  {meta['value']}"
+            rows.append((lbl, description, _format_odds(meta['odds']), False))
+
+    if not rows:
+        return None
+
+    fig_height = max(3, len(rows) * 0.5 + 1)
+    fig, ax = plt.subplots(figsize=(7, fig_height), facecolor=BG)
+    ax.set_facecolor(BG)
+    ax.axis('off')
+
+    xs    = [0.01, 0.10, 0.75]
+    row_h = 1 / (len(rows) + 2)
+    y     = 0.97
+
+    for col_x, col_label in zip(xs, ['', 'Bet', 'Odds']):
+        ax.text(col_x, y, col_label, transform=ax.transAxes,
+                color=TEXT, fontsize=9, fontweight='bold', va='top', ha='left')
+    y -= row_h * 0.8
+
+    for label, description, odds_str, is_header in rows:
+        if is_header:
+            rect = plt.Rectangle((0, y - row_h * 0.15), 1, row_h * 0.85,
+                                  transform=ax.transAxes, color=HEADER_BG, zorder=0)
+            ax.add_patch(rect)
+            ax.text(0.01, y + row_h * 0.5, description, transform=ax.transAxes,
+                    color=TEXT, fontsize=8.5, fontweight='bold', va='center', ha='left')
         else:
-            playerid_bet_on = 0
+            ax.text(xs[0], y + row_h * 0.3, label,       transform=ax.transAxes,
+                    color=TEXT, fontsize=8.5, va='center', ha='left')
+            ax.text(xs[1], y + row_h * 0.3, description, transform=ax.transAxes,
+                    color=TEXT, fontsize=8.5, va='center', ha='left')
+            ax.text(xs[2], y + row_h * 0.3, odds_str,    transform=ax.transAxes,
+                    color=TEXT, fontsize=8.5, fontweight='bold', va='center', ha='left')
+            ax.plot([0, 1], [y, y], color='#40444b', linewidth=0.4, transform=ax.transAxes)
+        y -= row_h
 
-        bet_info = bets_info[option_value]
-        bet_type = bet_info['type']
-        bet_value = bet_info['value']
-        bet_odd = bet_info['odds']
-        
-        return (user_id, match_title, favorite, underdog, playerid_bet_on, bet_type, bet_value, bet_odd, bet_amount)
-            
-    # Check if the user is already in the table
-    cursor = await db.execute("SELECT straftcoins FROM players WHERE user_id = ?", (user_id,))
+    plt.tight_layout(pad=0.3)
+    buf = BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight', dpi=150, facecolor=BG)
+    buf.seek(0)
+    plt.close(fig)
+    return buf
+
+
+async def create_odds_display(thread, bets_info, game_mode):
+    if game_mode == '1v1':
+        buf = _build_1v1_odds_image(bets_info)
+    else:
+        buf = _build_mp_odds_image(bets_info)
+
+    if buf:
+        await thread.send(file=discord.File(fp=buf, filename='odds.png'))
+
+
+# ─────────────────────────────────────────────
+# BET PLACEMENT — SINGLE BET
+# ─────────────────────────────────────────────
+
+async def handle_bet_placements(match_title, label, amount, bet_meta, thread, message, db):
+    """
+    Validates balance, deducts stake, inserts bet into live_bets, and commits —
+    all in one operation. Returns True on success, False on failure.
+    """
+    user_id  = message.author.id
+    emojis   = await get_emoji(['Straftcoin'])
+    sc_emoji = emojis[0]
+
+    bet_type         = bet_meta['type']
+    bet_value        = bet_meta['value']
+    bet_odds         = bet_meta['odds']
+    player_bet_on_id = bet_meta['player_bet_on_id']
+    player_b_id      = bet_meta['player_b_id']
+
+    amount_to_win, _ = await odds_to_percentage('win', bet_odds, amount)
+
+    cursor = await db.execute(
+        "SELECT straftcoins FROM players WHERE user_id = ?", (user_id,)
+    )
     result = await cursor.fetchone()
 
     if result:
-        # User exists, update their straftcoins
         current_coins = result[0]
-        if bet_amount > current_coins:
-            await thread.send(f"{message.author.mention}, insufficeint Straftcoins! You only have {current_coins}{emojis[0]} left.")
+        if amount > current_coins:
+            await thread.send(embed=discord.Embed(
+                description=(
+                    f"{message.author.mention} — insufficient Straftcoins! "
+                    f"You only have **{current_coins}** {sc_emoji}."
+                ),
+                color=discord.Color.red()
+            ))
             return False
-        
-        bet = await bet_to_tuple()
-        _, _, _, _, _, bet_type, bet_value, bet_odds, _ = bet
-
-        amount_to_win, _ = await odds_to_percentage('win', bet_odds, bet_amount)
 
         await db.execute(
             "UPDATE players SET straftcoins = straftcoins - ? WHERE user_id = ?",
-            (bet_amount, user_id)
+            (amount, user_id)
         )
-        await thread.send(f"{message.author.mention}\n- Bet: {bet_amount}{emojis[0]} on {bet_type} (**{bet_value}**, {bet_odds} odds)\n- To Win: {amount_to_win}{emojis[0]}\n- Current Balance: {current_coins - bet_amount}{emojis[0]}")
-       
-    else:
-        # User doesn't exist, insert them and deduct the bet
-        initial_coins = 1000
-        if bet_amount > initial_coins:
-            await db.execute(
-                "INSERT INTO players (user_id) VALUES (?)",
-                (user_id,)
-            )
-            await thread.send(f"{message.author.mention}, insufficient Straftcoin! You start with {initial_coins}{emojis[0]}.")
-            return False
-        
-        bet = await bet_to_tuple()
-        _, _, _, _, _, bet_type, bet_value, bet_odds, _ = bet
+        new_balance = current_coins - amount
 
-        amount_to_win, _ = await odds_to_percentage('win', bet_odds, bet_amount)
+    else:
+        initial = 1000
+        if amount > initial:
+            await thread.send(embed=discord.Embed(
+                description=(
+                    f"{message.author.mention} — you start with **{initial}** {sc_emoji} "
+                    f"and can't bet more than that."
+                ),
+                color=discord.Color.red()
+            ))
+            return False
 
         await db.execute(
             "INSERT INTO players (user_id, straftcoins) VALUES (?, ?)",
-            (user_id, initial_coins - bet_amount)
+            (user_id, initial - amount)
         )
-        await thread.send(f"{message.author.mention} added as player!\n- Bet: {bet_amount}{emojis[0]} on {bet_type} (**{bet_value}**, {bet_odds} odds)\n- To Win: {amount_to_win}{emojis[0]}\n- Current Balance: {initial_coins - bet_amount}{emojis[0]}")
+        new_balance = initial - amount
 
+    await db.execute(
+        """
+        INSERT INTO live_bets
+            (user_id, match_title, player_bet_on_id, player_b_id,
+             bet_type, bet_value, bet_odds, bet_amount, parlay_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        """,
+        (user_id, match_title, player_bet_on_id, player_b_id,
+         bet_type, bet_value, bet_odds, amount)
+    )
     await db.commit()
 
-    return bet
+    embed = discord.Embed(title='Bet Placed', color=discord.Color(0x90ee90))
+    embed.add_field(name='Bettor',  value=message.author.mention,              inline=True)
+    embed.add_field(name='Bet',     value=f'{label} — {bet_meta["display"]}',  inline=True)
+    embed.add_field(name='Odds',    value=_format_odds(bet_odds),               inline=True)
+    embed.add_field(name='Stake',   value=f'{amount} {sc_emoji}',              inline=True)
+    embed.add_field(name='To Win',  value=f'{amount_to_win} {sc_emoji}',       inline=True)
+    embed.add_field(name='Balance', value=f'{new_balance} {sc_emoji}',         inline=True)
+    await thread.send(embed=embed)
 
-async def odds_to_percentage(w_or_l_or_p, bet_odds, bet_amount):
-    if w_or_l_or_p == 'win':
+    return True
 
-        bet_odds_str = str(bet_odds)
 
-        if bet_odds_str[0] == '-':
-            odds_prcnt = 1 - (100/bet_odds)
-            amount1 = round(bet_amount * odds_prcnt)
-            amount2 = 0
-        else:
-            odds_prcnt = 1 + (bet_odds/100)
-            amount1 = round(bet_amount * odds_prcnt)
-            amount2 = 0
+# ─────────────────────────────────────────────
+# BET PLACEMENT — PARLAY
+# ─────────────────────────────────────────────
 
-    elif w_or_l_or_p == 'loss':
-        amount1 = 0
-        amount2 = bet_amount
-        
+async def handle_parlay_placement(match_title, leg_labels, stake, bets_info, thread, message, db):
+    """
+    Validates balance, calculates combined multiplier, inserts the parlay row
+    and all leg rows into the DB, then deducts the stake.
+    Returns True on success, False on failure.
+    """
+    user_id  = message.author.id
+    emojis   = await get_emoji(['Straftcoin'])
+    sc_emoji = emojis[0]
+
+    # --- Balance check ---
+    cursor = await db.execute(
+        "SELECT straftcoins FROM players WHERE user_id = ?", (user_id,)
+    )
+    result = await cursor.fetchone()
+
+    if result:
+        current_coins = result[0]
     else:
-        amount1 = 0
-        amount2 = 0
+        current_coins = 1000
+        await db.execute(
+            "INSERT INTO players (user_id, straftcoins) VALUES (?, ?)",
+            (user_id, current_coins)
+        )
+        await db.commit()
 
-    return amount1, amount2
+    if stake > current_coins:
+        await thread.send(embed=discord.Embed(
+            description=(
+                f"{message.author.mention} — insufficient Straftcoins! "
+                f"You only have **{current_coins}** {sc_emoji}."
+            ),
+            color=discord.Color.red()
+        ))
+        return False
 
-async def percentage_to_odds(percent_odds):
-    if percent_odds >= 0.5:
-        odds = ((percent_odds*100) / (1 - percent_odds)) * -1 
-    else:
-        odds = (100 / percent_odds) - 100
-    
-    return round(odds)
+    # --- Combined multiplier ---
+    multiplier = 1.0
+    for lbl in leg_labels:
+        multiplier *= _american_to_decimal(bets_info[lbl]['odds'])
+    multiplier   = round(multiplier, 4)
+    expected_win = round(stake * multiplier)
 
-async def check_match_titles(player1_name, player2_name, db):
-    
-    match_title = f"{player1_name} vs {player2_name}"
-    match_title_alt = f"{player2_name} vs {player1_name}"
-    
-    # Retrieve all live bets for the match
+    # --- Insert parlay row ---
+    cursor = await db.execute(
+        """
+        INSERT INTO parlays
+            (user_id, match_title, total_stake, num_legs,
+             combined_multiplier, status, payout)
+        VALUES (?, ?, ?, ?, ?, 'live', 0)
+        """,
+        (user_id, match_title, stake, len(leg_labels), multiplier)
+    )
+    parlay_id = cursor.lastrowid
+
+    # --- Insert each leg into live_bets ---
+    for lbl in leg_labels:
+        meta = bets_info[lbl]
+        await db.execute(
+            """
+            INSERT INTO live_bets
+                (user_id, match_title, player_bet_on_id, player_b_id,
+                 bet_type, bet_value, bet_odds, bet_amount, parlay_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id, match_title,
+                meta['player_bet_on_id'], meta['player_b_id'],
+                meta['type'], meta['value'],
+                meta['odds'], stake,
+                parlay_id
+            )
+        )
+
+    # --- Deduct stake ---
+    await db.execute(
+        "UPDATE players SET straftcoins = straftcoins - ? WHERE user_id = ?",
+        (stake, user_id)
+    )
+    await db.commit()
+
+    # --- Confirmation message ---
+    legs_text = '\n'.join(
+        f'{lbl}: {bets_info[lbl]["display"]} ({_format_odds(bets_info[lbl]["odds"])})'
+        for lbl in leg_labels
+    )
+    embed = discord.Embed(title='Parlay Placed', color=discord.Color(0x90ee90))
+    embed.add_field(name='Bettor',                    value=message.author.mention,      inline=False)
+    embed.add_field(name=f'Legs ({len(leg_labels)})', value=legs_text,                   inline=False)
+    embed.add_field(name='Stake',                     value=f'{stake} {sc_emoji}',       inline=True)
+    embed.add_field(name='Multiplier',                value=f'{multiplier:.2f}x',        inline=True)
+    embed.add_field(name='To Win',                    value=f'{expected_win} {sc_emoji}',inline=True)
+    embed.add_field(name='Balance',                   value=f'{current_coins - stake} {sc_emoji}', inline=True)
+    await thread.send(embed=embed)
+    return True
+
+
+# ─────────────────────────────────────────────
+# MATCH TITLE LOOKUP
+# ─────────────────────────────────────────────
+
+async def check_match_titles(match_title, db):
     async with db.execute(
         "SELECT * FROM live_bets WHERE match_title = ?", (match_title,)
     ) as cursor:
         bets = await cursor.fetchall()
+    return bets, match_title
 
-    # If there are no bets, notify and return
-    if not bets:
+
+# ─────────────────────────────────────────────
+# WIN/LOSS DETERMINATION
+# ─────────────────────────────────────────────
+
+async def win_loss_determination(bets, match_id, spread, winner_id, total_rounds, db):
+    """
+    Resolves all bet types against the match result.
+    Queries match_participants internally for placement and per-player round data.
+    """
+    # Fetch placement and rounds for all participants
+    async with db.execute(
+        """
+        SELECT player_id, placement, rounds_won
+        FROM match_participants WHERE match_id = ?
+        """, (match_id,)
+    ) as cursor:
+        participants = await cursor.fetchall()
+
+    placements_map  = {pid: placement for pid, placement, _ in participants}
+    rounds_map      = {pid: rw        for pid, _, rw       in participants}
+    max_placement   = max(p for _, p, _ in participants) if participants else 1
+
+    winning_bets = []
+    losing_bets  = []
+    pushed_bets  = []
+
+    for bet in bets:
+        (bet_id, user_id, match_title,
+         player_bet_on_id, player_b_id,
+         bet_type, bet_value, bet_odds, bet_amount,
+         parlay_id) = bet
+
+        async def resolve(outcome):
+            amount_won, _ = await odds_to_percentage(outcome, bet_odds, bet_amount)
+            row = (
+                user_id, match_id, match_title,
+                player_bet_on_id, player_b_id,
+                bet_type, bet_value, bet_odds, bet_amount,
+                outcome, amount_won, parlay_id
+            )
+            if outcome == 'win':
+                winning_bets.append(row)
+            elif outcome == 'loss':
+                losing_bets.append(row)
+            else:
+                pushed_bets.append(row)
+
+        # ── Moneyline ──────────────────────────────────────────────
+        if bet_type == 'moneyline':
+            await resolve('win' if player_bet_on_id == winner_id else 'loss')
+
+        # ── Spread (1v1 only) ──────────────────────────────────────
+        elif bet_type == 'spread':
+            side  = bet_value[0]           # '-' or '+'
+            line  = float(bet_value[1:])
+
+            if side == '-':
+                # Favorite covers if they won AND margin > line
+                if player_bet_on_id == winner_id and spread > line:
+                    await resolve('win')
+                elif spread == line:
+                    await resolve('push')
+                else:
+                    await resolve('loss')
+            else:
+                # Underdog covers if they won OR margin < line
+                if player_bet_on_id != winner_id or spread < line:
+                    await resolve('win')
+                elif spread == line:
+                    await resolve('push')
+                else:
+                    await resolve('loss')
+
+        # ── Head-to-Head ───────────────────────────────────────────
+        elif bet_type == 'head_to_head':
+            place_a = placements_map.get(player_bet_on_id)
+            place_b = placements_map.get(player_b_id)
+
+            if place_a is None or place_b is None:
+                await resolve('push')  # player not in match, push
+            elif place_a < place_b:
+                await resolve('win')
+            elif place_a == place_b:
+                await resolve('push')
+            else:
+                await resolve('loss')
+
+        # ── Podium ─────────────────────────────────────────────────
+        elif bet_type == 'podium':
+            place = placements_map.get(player_bet_on_id)
+            if place is None:
+                await resolve('push')
+            elif place <= 3:
+                await resolve('win')
+            else:
+                await resolve('loss')
+
+        # ── Last Place ─────────────────────────────────────────────
+        elif bet_type == 'last_place':
+            place = placements_map.get(player_bet_on_id)
+            if place is None:
+                await resolve('push')
+            elif place == max_placement:
+                await resolve('win')
+            else:
+                await resolve('loss')
+
+        # ── O/U Total Rounds ───────────────────────────────────────
+        elif bet_type == 'ou_total':
+            side = bet_value[0]
+            line = float(bet_value[1:])
+
+            if   side == 'O' and total_rounds > line:  await resolve('win')
+            elif side == 'U' and total_rounds < line:  await resolve('win')
+            elif total_rounds == line:                  await resolve('push')
+            else:                                       await resolve('loss')
+
+        # ── O/U Player Rounds ──────────────────────────────────────
+        elif bet_type == 'ou_player':
+            side        = bet_value[0]
+            line        = float(bet_value[1:])
+            player_rw   = rounds_map.get(player_bet_on_id, 0)
+
+            if   side == 'O' and player_rw > line:  await resolve('win')
+            elif side == 'U' and player_rw < line:  await resolve('win')
+            elif player_rw == line:                  await resolve('push')
+            else:                                    await resolve('loss')
+
+    return winning_bets + losing_bets + pushed_bets, winning_bets, pushed_bets
+
+
+# ─────────────────────────────────────────────
+# BET PAYOUTS
+# ─────────────────────────────────────────────
+
+async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rounds, db):
+    """
+    Finds live bets for a match by participant IDs, resolves all bet types,
+    settles parlays, and returns a formatted settlement message.
+    """
+    try:
         async with db.execute(
-        "SELECT * FROM live_bets WHERE match_title = ?", (match_title_alt,)
+            "SELECT COUNT(*) FROM live_bets WHERE match_title = ?", (match_title,)
+        ) as cursor:
+            count_row = await cursor.fetchone()
+
+        if not count_row or count_row[0] == 0:
+            return False
+
+        # Fetch ALL live bets for this match (includes O/U total with NULL player_bet_on_id)
+        async with db.execute(
+            "SELECT * FROM live_bets WHERE match_title = ?", (match_title,)
         ) as cursor:
             bets = await cursor.fetchall()
 
-        match_title = match_title_alt
-
-    return bets, match_title
-
-async def win_loss_determination(bets, match_id, spread, match_winner_id, total_rounds):
-    winning_bets = []
-    losing_bets = []
-    pushed_bets = []
-
-    for _, user_id, match_title, match_favorite_id, match_underdog_id, playerid_bet_on, bet_type, bet_value, bet_odds, bet_amount in bets:
-        
-        async def win_loss_info(w_or_l_or_p):
-            bet_outcome = w_or_l_or_p
-            amount1, amount2 = await odds_to_percentage(w_or_l_or_p, bet_odds, bet_amount)
-            amount_won = amount1
-            amount_lost = amount2
-
-            bet_info = (user_id,
-                        match_id,
-                        match_title, 
-                        match_favorite_id, 
-                        match_underdog_id, 
-                        playerid_bet_on, 
-                        bet_type, 
-                        bet_value, 
-                        bet_odds, 
-                        bet_amount, 
-                        bet_outcome, 
-                        amount_won, 
-                        amount_lost)
-            
-            return bet_info
-        
-        async def append_result(is_winner):
-            if is_winner == 'win':
-                winning_bets.append(await win_loss_info('win'))
-
-            elif is_winner == 'loss':
-                losing_bets.append(await win_loss_info('loss'))
-
-            else:
-                pushed_bets.append(await win_loss_info('push'))
-
-        if bet_type == 'Spread':
-            placed_neg_or_pos = bet_value[0]
-            placed_value = float(bet_value[1:])
-            is_winner = 'loss'
-            
-            if placed_neg_or_pos == '-':
-                if match_winner_id == match_favorite_id and spread > placed_value:
-                    is_winner = 'win'
-                elif match_winner_id == match_favorite_id and spread == placed_value:
-                    is_winner = 'push'
-            elif placed_neg_or_pos == '+':
-                if match_winner_id != match_favorite_id or spread < placed_value:
-                    is_winner = 'win'
-                elif spread == placed_value:
-                    is_winner = 'push'
-                
-            await append_result(is_winner)
-
-        elif bet_type == 'Moneyline':
-            is_winner = 'loss'
-
-            if playerid_bet_on == match_winner_id:
-                is_winner = 'win'
-
-            await append_result(is_winner)
-
-        elif bet_type == 'O/U':
-            placed_o_or_u = bet_value[0]
-            placed_value = float(bet_value[1:])
-            is_winner = 'loss'
-
-            if (placed_o_or_u == 'O' and total_rounds > placed_value) or (placed_o_or_u == 'U' and total_rounds < placed_value):
-                is_winner = 'win'
-
-            if total_rounds == placed_value:
-                is_winner = 'push'
-
-            await append_result(is_winner)
-
-    all_bets = winning_bets + losing_bets + pushed_bets
-
-    return all_bets, winning_bets, pushed_bets
-
-async def handle_bet_payouts(match_id, player1_name, player2_name, match_winner_id, spread, total_rounds, db):
-    
-    try:
-        
-        bets, match_title = await check_match_titles(player1_name, player2_name, db)
-        
         if not bets:
             return False
 
-        all_bets, winning_bets, pushed_bets = await win_loss_determination(bets, match_id, spread, match_winner_id, total_rounds)
-        
-        # Insert the bets into the past_bets table
-        await db.executemany(
-            """
-            INSERT INTO past_bets (user_id, match_id, match_title, match_favorite_id, match_underdog_id, playerid_bet_on, bet_type, bet_value, bet_odds, bet_amount, bet_outcome, amount_won, amount_lost)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, all_bets
+        all_bets, winning_bets, pushed_bets = await win_loss_determination(
+            bets, match_id, spread, winner_id, total_rounds, db
         )
 
-        # Handle bets that won
-        if len(winning_bets)>0:
-            win_updates = [(bet[11], bet[0]) for bet in winning_bets]
+        # --- Move bets to past_bets ---
+        await db.executemany(
+            """
+            INSERT INTO past_bets
+                (user_id, match_id, match_title,
+                 player_bet_on_id, player_b_id,
+                 bet_type, bet_value, bet_odds, bet_amount,
+                 result, amount_won, parlay_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            all_bets
+        )
 
-            async with db.executemany(
-                "UPDATE players SET straftcoins = straftcoins + ? WHERE user_id = ?", win_updates
-            ):
-                pass
-        
-        # Handle bets that pushed
-        if len(pushed_bets) > 0:
-            push_updates = [(bet[9], bet[0]) for bet in pushed_bets]
+        # --- Credit winning single bets ---
+        single_wins = [b for b in winning_bets if b[11] is None]  # parlay_id index
+        if single_wins:
+            await db.executemany(
+                "UPDATE players SET straftcoins = straftcoins + ? WHERE user_id = ?",
+                [(b[10], b[0]) for b in single_wins]
+            )
 
-            async with db.executemany(
-                "UPDATE players SET straftcoins = straftcoins + ? WHERE user_id = ?", push_updates
-            ):
-                pass
+        # --- Refund pushed single bets ---
+        single_pushes = [b for b in pushed_bets if b[11] is None]
+        if single_pushes:
+            await db.executemany(
+                "UPDATE players SET straftcoins = straftcoins + ? WHERE user_id = ?",
+                [(b[8], b[0]) for b in single_pushes]   # bet_amount index
+            )
 
-        # Remove the bets from the live_bets table
+        # --- Settle parlays ---
+        parlay_ids = {b[11] for b in all_bets if b[11] is not None}
+        for pid in parlay_ids:
+            await _settle_parlay(pid, db)
+
+        # --- Remove live bets ---
         await db.execute(
             "DELETE FROM live_bets WHERE match_title = ?", (match_title,)
         )
-
-        # Commit the transaction
         await db.commit()
 
-        bet_settlements_message = ''
-        
-        emojis = await get_emoji(['Poggers', 'KEKW', 'Straftcoin'])
+        # --- Build settlement embeds ---
+        emojis   = await get_emoji(['Poggers', 'KEKW', 'Straftcoin'])
+        pog, kek, sc = emojis
 
-        for user_id, match_id, match_title, _, _, _, bet_type, bet_value, bet_odds, bet_amount, bet_outcome, amount_won, _ in all_bets:
-            bettor = f'<@{user_id}>'
-            new_straftcoin_balance = await get_straftcoin(db, user_id)
+        fields = []  # (name, value) pairs collected before distributing into embeds
 
-            if bet_outcome == 'win':
-                bet_settlements_message += f"{bettor}: **Bet Won** {emojis[0]}\n- Bet: {bet_type} (**{bet_value}**, {bet_amount}{emojis[2]}, {'+' if bet_odds > 0 else ''}{bet_odds} odds)\n- Amount Won: {amount_won}{emojis[2]}\n- Balance: {new_straftcoin_balance}{emojis[2]}\n"
-            if bet_outcome == 'loss':
-                bet_settlements_message += f"{bettor}: **Bet Lost** {emojis[1]}\n- Bet: {bet_type} (**{bet_value}**, {bet_amount}{emojis[2]}, {'+' if bet_odds > 0 else ''}{bet_odds} odds)\n- Balance: {new_straftcoin_balance}{emojis[2]}\n"
-            if bet_outcome == 'push':
-                bet_settlements_message += f"{bettor}: **Bet Pushed** {emojis[1]}\n- Bet: {bet_type} (**{bet_value}**, {bet_amount}{emojis[2]}, {'+' if bet_odds > 0 else ''}{bet_odds} odds)\n- Amount Returned: {bet_amount}{emojis[2]}\n- Balance: {new_straftcoin_balance}{emojis[2]}\n"
+        single_bets = [b for b in all_bets if b[11] is None]
+        for b in single_bets:
+            (user_id, _, _,
+             _, _,
+             bet_type, bet_value, bet_odds, bet_amount,
+             result, amount_won, _) = b
 
-        return bet_settlements_message
+            balance  = await get_straftcoin(db, user_id)
+            bettor   = f'<@{user_id}>'
+            odds_str = _format_odds(bet_odds)
+
+            if result == 'win':
+                fields.append((
+                    f'🏆 Bet Won {pog} — {bettor}',
+                    f'{bet_type} **{bet_value}** @ {odds_str} · Stake: {bet_amount} {sc}\n'
+                    f'+{amount_won} {sc} · Balance: {balance} {sc}'
+                ))
+            elif result == 'loss':
+                fields.append((
+                    f'❌ Bet Lost {kek} — {bettor}',
+                    f'{bet_type} **{bet_value}** @ {odds_str} · Stake: {bet_amount} {sc}\n'
+                    f'Balance: {balance} {sc}'
+                ))
+            elif result == 'push':
+                fields.append((
+                    f'↩️ Bet Pushed — {bettor}',
+                    f'{bet_type} **{bet_value}** @ {odds_str}\n'
+                    f'Returned: {bet_amount} {sc} · Balance: {balance} {sc}'
+                ))
+
+        for pid in parlay_ids:
+            async with db.execute(
+                "SELECT user_id, total_stake, combined_multiplier, status, payout "
+                "FROM parlays WHERE parlay_id = ?", (pid,)
+            ) as cursor:
+                p = await cursor.fetchone()
+            if not p:
+                continue
+            p_user, p_stake, p_mult, p_status, p_payout = p
+            balance = await get_straftcoin(db, p_user)
+            bettor  = f'<@{p_user}>'
+            if p_status == 'won':
+                fields.append((
+                    f'🏆 Parlay Won {pog} — {bettor}',
+                    f'Stake: {p_stake} {sc} · {p_mult:.2f}x\n'
+                    f'+{p_payout} {sc} · Balance: {balance} {sc}'
+                ))
+            else:
+                fields.append((
+                    f'❌ Parlay Lost {kek} — {bettor}',
+                    f'Stake: {p_stake} {sc} · Balance: {balance} {sc}'
+                ))
+
+        if not fields:
+            return False
+
+        # Distribute fields across embeds (max 25 each); first gets title + description
+        embeds = []
+        for i, chunk_start in enumerate(range(0, len(fields), 25)):
+            chunk  = fields[chunk_start:chunk_start + 25]
+            embed  = discord.Embed(color=discord.Color(0x90ee90))
+            if i == 0:
+                embed.title       = 'Bet Settlements'
+                embed.description = (
+                    f'**{match_title}**\n'
+                    f'Spread (1st vs 2nd): {spread} · Total Rounds: {total_rounds}'
+                )
+            for name, value in chunk:
+                embed.add_field(name=name, value=value, inline=False)
+            embeds.append(embed)
+
+        return embeds
 
     except Exception as e:
-        # Rollback in case of an error
         await db.rollback()
-        await print(f"An error occurred while recording the match: {e}")
+        print(f"handle_bet_payouts error: {e}")
+        return False
 
-async def get_matchup_data(playerid, db):
-    async with db.execute("""
-        SELECT 
-            CASE WHEN winner_id = ? THEN loser_id ELSE winner_id END AS opponent_id,
-            SUM(CASE WHEN winner_id = ? THEN 1 ELSE 0 END) AS wins_against,
-            SUM(CASE WHEN loser_id = ? THEN 1 ELSE 0 END) AS losses_against,
-            SUM(CASE WHEN winner_id = ? THEN winner_rounds ELSE loser_rounds END) AS rounds_won_against,
-            SUM(CASE WHEN winner_id = ? THEN loser_rounds ELSE 0 END) AS rounds_lost_against, 
-            AVG(CASE WHEN winner_id = ? THEN spread ELSE NULL END) AS avg_winning_spread,   
-            AVG(CASE WHEN loser_id = ? THEN spread ELSE NULL END) AS avg_losing_spread 
-        FROM matches
-        WHERE winner_id = ? OR loser_id = ?
-        GROUP BY opponent_id
-    """, (playerid, playerid, playerid, playerid, playerid, playerid, playerid, playerid, playerid)) as cursor:
-        rows = await cursor.fetchall()
-    
-    return rows
+
+async def _settle_parlay(parlay_id, db):
+    """
+    Checks all legs of a parlay in past_bets.
+    Credits payout if all won; marks lost if any lost.
+    Pushes are treated as wins (leg removed from parlay effectively).
+    """
+    async with db.execute(
+        "SELECT result FROM past_bets WHERE parlay_id = ?",
+        (parlay_id,)
+    ) as cursor:
+        legs = await cursor.fetchall()
+
+    if not legs:
+        return
+
+    # Any loss = parlay lost
+    if any(result == 'loss' for (result,) in legs):
+        await db.execute(
+            "UPDATE parlays SET status = 'lost' WHERE parlay_id = ?",
+            (parlay_id,)
+        )
+        return
+
+    # All non-loss = parlay won
+    async with db.execute(
+        "SELECT user_id, total_stake, combined_multiplier FROM parlays WHERE parlay_id = ?",
+        (parlay_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+
+    if not row:
+        return
+
+    user_id, total_stake, multiplier = row
+    payout = round(total_stake * multiplier)
+
+    await db.execute(
+        "UPDATE players SET straftcoins = straftcoins + ? WHERE user_id = ?",
+        (payout, user_id)
+    )
+    await db.execute(
+        "UPDATE parlays SET status = 'won', payout = ? WHERE parlay_id = ?",
+        (payout, parlay_id)
+    )
+
+
+# ─────────────────────────────────────────────
+# PERFORMANCE SCORING
+# ─────────────────────────────────────────────
 
 async def get_player_stats(playerid, db):
-    player_cursor = await db.execute("SELECT wins, losses, rounds_won, rounds_lost FROM players WHERE user_id = ?", (playerid,))
+    """
+    Returns overall 1v1 stats and average win/loss margin for a player.
+    """
+    player_cursor = await db.execute(
+        """
+        SELECT wins_1v1, losses_1v1, rounds_won_1v1, rounds_lost_1v1
+        FROM players WHERE user_id = ?
+        """, (playerid,)
+    )
     player = await player_cursor.fetchone()
 
-    async with db.execute('''
-        SELECT 
-            AVG(CASE WHEN winner_id = ? THEN spread ELSE NULL END) AS avg_winning_spread,
-            AVG(CASE WHEN loser_id = ? THEN spread ELSE NULL END) AS avg_losing_spread
-        FROM matches 
-        WHERE winner_id = ? OR loser_id = ?
-    ''', (playerid, playerid, playerid, playerid)) as spread_cursor:
-        player_spread = await spread_cursor.fetchone()
-        
-    return player, player_spread
+    # Avg winning margin: when player placed 1st in a 1v1, how far ahead were they?
+    async with db.execute(
+        """
+        SELECT
+            AVG(CASE WHEN mp1.placement = 1
+                THEN mp1.rounds_won - mp2.rounds_won ELSE NULL END) AS avg_winning_margin,
+            AVG(CASE WHEN mp1.placement = 2
+                THEN mp2.rounds_won - mp1.rounds_won ELSE NULL END) AS avg_losing_margin
+        FROM match_participants mp1
+        JOIN match_participants mp2
+            ON  mp1.match_id   = mp2.match_id
+            AND mp2.player_id != mp1.player_id
+        JOIN matches m ON mp1.match_id = m.match_id
+        WHERE mp1.player_id = ? AND m.game_mode = '1v1'
+        """, (playerid,)
+    ) as cursor:
+        player_margin = await cursor.fetchone()
+
+    return player, player_margin
+
+
+async def get_matchup_data(playerid, db):
+    """
+    Returns per-opponent stats for a player across all shared 1v1 matches.
+    """
+    async with db.execute(
+        """
+        SELECT
+            mp2.player_id                                                           AS opponent_id,
+            SUM(CASE WHEN mp1.placement < mp2.placement THEN 1 ELSE 0 END)         AS wins_against,
+            SUM(CASE WHEN mp1.placement > mp2.placement THEN 1 ELSE 0 END)         AS losses_against,
+            SUM(mp1.rounds_won)                                                     AS rounds_won_shared,
+            SUM(mp2.rounds_won)                                                     AS rounds_lost_shared,
+            AVG(CASE WHEN mp1.placement = 1 AND mp2.placement = 2
+                THEN mp1.rounds_won - mp2.rounds_won ELSE NULL END)                 AS avg_winning_margin,
+            AVG(CASE WHEN mp1.placement = 2 AND mp2.placement = 1
+                THEN mp2.rounds_won - mp1.rounds_won ELSE NULL END)                 AS avg_losing_margin
+        FROM match_participants mp1
+        JOIN match_participants mp2
+            ON  mp1.match_id   = mp2.match_id
+            AND mp2.player_id != mp1.player_id
+        JOIN matches m ON mp1.match_id = m.match_id
+        WHERE mp1.player_id = ? AND m.game_mode = '1v1'
+        GROUP BY mp2.player_id
+        """, (playerid,)
+    ) as cursor:
+        rows = await cursor.fetchall()
+
+    return rows
+
 
 async def calc_performance_score(playerid, op_id, db):
-        
-        player, player_spread = await get_player_stats(playerid, db)
+    player, player_margin = await get_player_stats(playerid, db)
 
-        total_wins, total_losses, tot_rounds_won, tot_rounds_lost = player
-        avg_winning_spread, avg_losing_spread  = player_spread
+    if not player:
+        return 10
 
-        if total_wins == 0 and total_losses == 0:
-            return 10
+    total_wins, total_losses, tot_rounds_won, tot_rounds_lost = player
+    avg_winning_margin = player_margin[0] if player_margin and player_margin[0] else 0
+    avg_losing_margin  = player_margin[1] if player_margin and player_margin[1] else 0
 
-        avg_winning_spread = player_spread[0] if player_spread[0] is not None else 0
-        avg_losing_spread = player_spread[1] if player_spread[1] is not None else 0
-        
-        tot_matches = total_wins + total_losses
-        tot_rounds = tot_rounds_won + tot_rounds_lost
+    if total_wins == 0 and total_losses == 0:
+        return 10
 
-        tot_win_ratio = total_wins / tot_matches if tot_matches > 0 else 0
-        rounds_won_ratio = tot_rounds_won / tot_rounds if tot_rounds > 0 else 0
-        
-        winning_spread_ratio = avg_winning_spread / 10 if avg_winning_spread > 0 else 0
-        losing_spread_ratio = avg_losing_spread / 10 if avg_losing_spread > 0 else 0
+    tot_matches = total_wins + total_losses
+    tot_rounds  = tot_rounds_won + tot_rounds_lost
 
-        match_stabilization = tot_matches / (tot_matches + 10)
-        
-        W1, W2, W3, W4, W5 = 50, 20, 10, 15, 5
+    win_ratio           = total_wins / tot_matches if tot_matches > 0 else 0
+    rounds_won_ratio    = tot_rounds_won / tot_rounds if tot_rounds > 0 else 0
+    winning_margin_ratio = avg_winning_margin / 10 if avg_winning_margin > 0 else 0
+    losing_margin_ratio  = avg_losing_margin  / 10 if avg_losing_margin  > 0 else 0
+    stabilization       = tot_matches / (tot_matches + 10)
 
-        performance_score = (
-            (W1 * tot_win_ratio) +
-            (W2 * winning_spread_ratio) -
-            (W3 * losing_spread_ratio) +
-            (W4 * rounds_won_ratio) +
-            (W5 * match_stabilization)
-        )
-        
-        rows = await get_matchup_data(playerid, db)
-        
-        if rows:
-            for row in rows:
-                opponent_id, wins, losses, rounds_won, rounds_lost, avg_win_spread_v_op, avg_loss_spread_v_op = row
-                if opponent_id == op_id:
-                    tot_op_matches = wins + losses
-                    tot_op_rounds = rounds_won + rounds_lost
+    W1, W2, W3, W4, W5 = 50, 20, 10, 15, 5
+    score = (
+        W1 * win_ratio +
+        W2 * winning_margin_ratio -
+        W3 * losing_margin_ratio +
+        W4 * rounds_won_ratio +
+        W5 * stabilization
+    )
 
-                    avg_win_spread_v_op = avg_win_spread_v_op if avg_win_spread_v_op is not None else 0
-                    avg_loss_spread_v_op = avg_loss_spread_v_op if avg_loss_spread_v_op is not None else 0
+    rows = await get_matchup_data(playerid, db)
+    if rows:
+        for row in rows:
+            (opponent_id, wins, losses,
+             rw, rl,
+             avg_win_margin_v_op, avg_loss_margin_v_op) = row
 
-                    win_ratio_v_op = wins / tot_op_matches if tot_op_matches > 0 else 0
-                    round_ratio_v_op = rounds_won / tot_op_rounds if tot_op_rounds > 0 else 0
-                    
-                    winning_spread_ratio_v_op = avg_win_spread_v_op / 10
-                    losing_spread_ratio_v_op = avg_loss_spread_v_op / 10
+            if opponent_id != op_id:
+                continue
 
-                    match_stabilization_v_op = tot_op_matches / (tot_op_matches + 10)
+            tot_op      = wins + losses
+            tot_op_rds  = rw + rl
+            if tot_op == 0:
+                continue
 
-                    W6, W7, W8, W9, W10 = 50, 20, 10, 15, 5
-                    
-                    performance_score = performance_score + (
-                        (W6 * win_ratio_v_op) +
-                        (W7 * winning_spread_ratio_v_op) -
-                        (W8 * losing_spread_ratio_v_op) +
-                        (W9 * round_ratio_v_op) +
-                        (W10 * match_stabilization_v_op)
-                    )
+            win_ratio_v_op   = wins / tot_op
+            rw_ratio_v_op    = rw / tot_op_rds if tot_op_rds > 0 else 0
+            wm_ratio_v_op    = (avg_win_margin_v_op  or 0) / 10
+            lm_ratio_v_op    = (avg_loss_margin_v_op or 0) / 10
+            stab_v_op        = tot_op / (tot_op + 10)
 
-        return performance_score
+            W6, W7, W8, W9, W10 = 50, 20, 10, 15, 5
+            score += (
+                W6  * win_ratio_v_op +
+                W7  * wm_ratio_v_op -
+                W8  * lm_ratio_v_op +
+                W9  * rw_ratio_v_op +
+                W10 * stab_v_op
+            )
+
+    return score
+
 
 async def calculate_win_probability(score_a, score_b, scaling_factor=100):
-    probability_a = round(1 / (1 + 10 ** ((score_b - score_a) / scaling_factor)), 2)
-    probability_b = round(1 - probability_a, 2)
-    return probability_a, probability_b
+    prob_a = round(1 / (1 + 10 ** ((score_b - score_a) / scaling_factor)), 2)
+    return prob_a, round(1 - prob_a, 2)
+
+
+async def calculate_mp_win_probabilities(player_ids, db):
+    """
+    Estimates win probability for each player in an MP lobby.
+    Uses each player's 1v1 rating with softmax normalization.
+    """
+    ratings = {}
+    for pid in player_ids:
+        ratings[pid] = await get_rating(db, pid, mode='1v1')
+
+    # Softmax over ratings scaled by Elo divisor
+    exp_vals = {pid: math.exp(r / 400) for pid, r in ratings.items()}
+    total    = sum(exp_vals.values())
+    probs    = {pid: round(v / total, 4) for pid, v in exp_vals.items()}
+
+    return probs

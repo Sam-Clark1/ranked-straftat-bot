@@ -1,16 +1,21 @@
 from datetime import datetime
 
+def chunk_message(text, max_len=1900):
+    """Split text into chunks that fit within Discord's 2000-char message limit."""
+    chunks = []
+    while len(text) > max_len:
+        split_at = text.rfind('\n', 0, max_len)
+        if split_at == -1:
+            split_at = max_len
+        chunks.append(text[:split_at])
+        text = text[split_at:].lstrip('\n')
+    if text:
+        chunks.append(text)
+    return chunks
+
 #get ranks based on sp number
 async def get_ranks():
-    # RANKS = [
-    #     (0, "Shitterton"),
-    #     (500, "Bronze"),
-    #     (1000, "Silver"),
-    #     (1500, "Gold"),
-    #     (2000, "Platinum"),
-    #     (2500, "Diamond"),
-    #     (3000, "Daddy")
-    # ]
+    
     RANKS = [
         (0, "Shitterton IV"),
         (200, "Shitterton III"),
@@ -70,7 +75,9 @@ async def get_rank(sp):
         if sp >= threshold:
             rank_emote = await get_emoji([rank])
             return rank, rank_emote[0]
-    return "Shitterton IV"
+        
+    shitterton_emote = await get_emoji(["Shitterton"])
+    return "Shitterton IV", shitterton_emote[0]
 
 #get server specific display names of players from their user id
 async def get_display_name(ctx, user_id):
@@ -79,34 +86,24 @@ async def get_display_name(ctx, user_id):
     return username
 
 #get current sp value for specific player
-async def get_sp(db, user_id):
-    cursor = await db.execute("SELECT sp FROM players WHERE user_id = ?", (user_id,))
-    row = await cursor.fetchone()
-    return row[0] if row else 0
+async def get_sp(db, player_id, mode='1v1'):
+    col = 'sp_1v1' if mode == '1v1' else 'sp_mp'
+    row = await db.execute(f"SELECT {col} FROM players WHERE user_id = ?", (player_id,))
+    result = await row.fetchone()
+    return result[0] if result else 0
 
 #get current elo rating for specific player
-async def get_rating(db, user_id):
-    cursor = await db.execute("SELECT rating FROM players WHERE user_id = ?", (user_id,))
-    row = await cursor.fetchone()
-    return row[0] if row else 1000
+async def get_rating(db, player_id, mode='1v1'):
+    col = 'rating_1v1' if mode == '1v1' else 'rating_mp'
+    row = await db.execute(f"SELECT {col} FROM players WHERE user_id = ?", (player_id,))
+    result = await row.fetchone()
+    return result[0] if result else 1000
 
 #get current straftat balance for specific player
 async def get_straftcoin(db, user_id):
     cursor = await db.execute("SELECT straftcoins FROM players WHERE user_id = ?", (user_id,))
     row = await cursor.fetchone()
     return row[0] if row else 1000
-
-#get current highest rank achieved for specific player
-async def get_highest_rank_achieved(db, user_id):
-    cursor = await db.execute("SELECT highest_rank_achieved FROM players WHERE user_id = ?", (user_id,))
-    row = await cursor.fetchone()
-    return row[0] if row else 'Shitterton IV'
-
-#get current highest sp achieved for specific player
-async def get_highest_sp_achieved(db, user_id):
-    cursor = await db.execute("SELECT highest_sp_achieved FROM players WHERE user_id = ?", (user_id,))
-    row = await cursor.fetchone()
-    return row[0] if row else 0
 
 async def get_players(db):
     async with db.execute("SELECT user_id, straftcoins FROM players") as cursor:
@@ -118,229 +115,203 @@ async def get_players(db):
     return players
 
 async def get_player_matches(db, user_id):
-    player_wins_cursor = await db.execute("SELECT * FROM matches WHERE winner_id = ?", (user_id,))
-    player_losses_cursor = await db.execute("SELECT * FROM matches WHERE loser_id = ?", (user_id,))
-
-    player_wins = await player_wins_cursor.fetchone()
-    player_losses = await player_losses_cursor.fetchone()
-    
-    if player_wins or player_losses:
-        return True
-    else:
-        return False 
+    cursor = await db.execute(
+        "SELECT participant_id FROM match_participants WHERE player_id = ? LIMIT 1",
+        (user_id,)
+    )
+    result = await cursor.fetchone()
+    return result is not None
 
 # checks if players are in players table and adds if they aren't
-async def handle_inputted_players(players, db):
-    
-    for player in players:
-        cursor = await db.execute("SELECT * FROM players WHERE user_id = ?", (player,))
-        result = await cursor.fetchone()
-
-        if result:
-            continue
-        else:
-            await db.execute(
-                "INSERT INTO players (user_id) VALUES (?)",
-                (player,)
+async def handle_inputted_players(player_ids, db):
+    for player_id in player_ids:
+        await db.execute("""
+            INSERT OR IGNORE INTO players (
+                user_id,
+                rating_1v1, sp_1v1, rank_1v1,
+                wins_1v1, losses_1v1,
+                rounds_won_1v1, rounds_lost_1v1,
+                highest_rank_1v1, highest_sp_1v1,
+                rating_mp, sp_mp, rank_mp,
+                wins_mp, losses_mp,
+                rounds_won_mp, rounds_lost_mp,
+                highest_rank_mp, highest_sp_mp,
+                straftcoins
+            ) VALUES (
+                ?,
+                1000, 0, 'Unranked',
+                0, 0, 0, 0,
+                'Unranked', 0,
+                1000, 0, 'Unranked',
+                0, 0, 0, 0,
+                'Unranked', 0,
+                1000
             )
-
-# Calculate Elo change
-async def calculate_elo(winner_rounds, loser_rounds, rating1, rating2):
-    K_FACTOR = 80  # Elo constant
-    round_ratio = (winner_rounds - loser_rounds) / 10
-    round_adjustment = (K_FACTOR/4)*round_ratio
-
-    winner_expected_score = 1 / (1 + 10 ** ((rating2 - rating1) / 400))
-    loser_expected_score = 1 / (1 + 10 ** ((rating1 - rating2) / 400))
-
-    winner_elo_change =int(K_FACTOR * (1 - winner_expected_score)) + round_adjustment
-    loser_elo_change =abs(int(K_FACTOR * (0 - loser_expected_score))) + round_adjustment
-
-    return winner_elo_change, loser_elo_change, winner_expected_score, loser_expected_score
-
-# Calculate SP changes
-async def calculate_sp_changes(winner_rating, loser_rating, winner_rounds, loser_rounds, expected_score):
-    
-    elo_difference = loser_rating - winner_rating
-    elo_difference_percentage = loser_rating / winner_rating
-    
-    round_ratio = (winner_rounds - loser_rounds) / 10  # Normalize to a scale of -1 to 1
-    
-    thresholds = [
-    (0.95, 100), (0.85, 110), (0.80, 120), (0.70, 120), (0.65, 120), (0.60, 130), 
-    (0.55, 130), (0.50, 150), (0.40, 150), (0.30, 160), (0.20, 200), 
-    (0.10, 200)
-    ]
-
-    for threshold, sp in thresholds:
-        if expected_score >= threshold:
-            base_sp = sp
-            break
-    else:
-        base_sp = 250
-    
-    sp_for_round_ratio = int(round(base_sp / 4))
-    
-    # Winner SP calculation
-    winner_sp_change = int(max(0, (base_sp + (elo_difference / 7.5))) + (round_ratio * sp_for_round_ratio))
-    
-    winner_sp_change = int(round(winner_sp_change))  # Ensure at least 1 SP is gained
-     
-    # Loser SP calculation
-    loser_sp_change = int(winner_sp_change * 0.35)  # Loser loses 50% of what the winner gains
-
-    loser_sp_change = loser_sp_change * elo_difference_percentage
-    
-    loser_sp_change = int(round(loser_sp_change))  # Ensure SP loss is non-negative
-    
-    return winner_sp_change, loser_sp_change
-
-# Calculate Straftat changes
-async def calculate_straftcoin_changes(winner_rounds, loser_rounds, expected_score):
-    
-    round_ratio = (winner_rounds - loser_rounds) / 10
-
-    thresholds = [
-    (0.95, 4000, 0.95), (0.85, 5000, 0.9), (0.80, 5200, 0.8), (0.70, 5400, 0.7), 
-    (0.65, 5600, 0.8), (0.60, 5800, 0.8), (0.55, 6000, 0.8), (0.50, 6200, 0.8), 
-    (0.40, 6400, 0.8), (0.30, 6600, 0.8), (0.20, 6800, 0.8), (0.10, 7000, 0.8)
-    ]
-
-    for threshold, straftcoin, percentage in thresholds:
-        if expected_score >= threshold:
-            base_straftcoin = straftcoin
-            loser_percent_cut = percentage
-            break
-    else:
-        base_straftcoin = 10000
-        loser_percent_cut = 0.8
-
-    straftcoin_for_round_ratio = int(round(base_straftcoin / 4))
-
-    winner_straftcoin_change = base_straftcoin + (straftcoin_for_round_ratio * round_ratio)
-    winner_straftcoin_change = int(round(max(winner_straftcoin_change, 0)))
-
-    loser_straftcoin_change = (base_straftcoin * loser_percent_cut) + (straftcoin_for_round_ratio * (abs(round_ratio-1)))
-    loser_straftcoin_change = int(round(max(loser_straftcoin_change, 0)))
-
-    return winner_straftcoin_change, loser_straftcoin_change
-
-async def add_player_to_db(player_id, player_new_rating, player_new_sp, player_rank, winner_rounds, loser_rounds, player_new_straftcoins, outcome, db):
-
-    if outcome == 'winner':
-        winr_or_lsr_rounds = [winner_rounds, loser_rounds]
-        outcome_table_identifier = 'wins'
-    elif outcome == 'loser':
-        winr_or_lsr_rounds = [loser_rounds, winner_rounds]
-        outcome_table_identifier = 'losses'
-    
-    current_highest_rank_achieved = await get_highest_rank_achieved(db, player_id)
-    current_highest_sp_achieved = await get_highest_sp_achieved(db, player_id)
-    
-    if player_new_sp > current_highest_sp_achieved:
-        current_highest_rank_achieved = player_rank
-        current_highest_sp_achieved = player_new_sp
-
-    variables = (player_new_rating, player_new_sp, 
-                 player_rank, 
-                 winr_or_lsr_rounds[0], 
-                 winr_or_lsr_rounds[1], 
-                 player_new_straftcoins,
-                 current_highest_rank_achieved,
-                 current_highest_sp_achieved,
-                 player_id)
-    
-    await db.execute(f"""
-    UPDATE players SET 
-        rating = ?,
-        sp = ?,
-        rank = ?,
-        {outcome_table_identifier} = {outcome_table_identifier} + 1,
-        rounds_won = rounds_won + ?,
-        rounds_lost = rounds_lost + ?,
-        straftcoins = ?,
-        highest_rank_achieved = ?,
-        highest_sp_achieved = ?
-        WHERE user_id = ?                 
-    """, variables)
-    
+        """, (player_id,))
     await db.commit()
 
-async def match_to_db(winner_id, loser_id, winner_rounds, loser_rounds, db):
+async def match_to_db(player_rounds, rounds_to_win, db):
+    """
+    player_rounds : list of (player_id, rounds_won) tuples, sorted descending by rounds_won
+    rounds_to_win : int
+    db            : active aiosqlite connection
 
-    # Checks if players are in players table and if not, add
-    await handle_inputted_players([winner_id, loser_id], db)
+    Returns list of result dicts sorted by placement (1st first).
+    """
 
-    # Fetch ratings
-    winner_row = await db.execute("SELECT rating, sp, straftcoins FROM players WHERE user_id = ?", (winner_id,))
-    loser_row = await db.execute("SELECT rating, sp, straftcoins FROM players WHERE user_id = ?", (loser_id,))
+    ELO_K = 32
 
-    winner_data = await winner_row.fetchone()
-    loser_data = await loser_row.fetchone()
+    # --- Determine mode from player count ---
+    game_mode = '1v1' if len(player_rounds) == 2 else 'mp'
 
-    winner_rating, winner_sp, winner_straftcoins = winner_data
-    loser_rating, loser_sp, loser_straftcoins = loser_data
+    # --- SP tables (MP only — 1v1 uses Elo-derived SP) ---
+    MP_SP_BY_PLACEMENT = {1: 50, 2: 25, 3: 10, 4: -5, 5: -10}
+    MP_SP_FLOOR = -15
 
-    # Calculate Elo changes
-    winner_elo_change, loser_elo_change, winner_expected_score, _ = await calculate_elo(winner_rounds, loser_rounds, winner_rating, loser_rating)
-    
-    # Update player stats
-    winner_new_rating = max(winner_rating + winner_elo_change, 0)  # Ensure rating doesn't go below 0
-    loser_new_rating = max(loser_rating - loser_elo_change, 0)  # Ensure rating doesn't go below 0
+    MP_SC_BY_PLACEMENT = {1: 100, 2: 50, 3: 30, 4: 15, 5: 10}
+    MP_SC_FLOOR = 5
 
-    if loser_new_rating == 0:
-        loser_elo_change = 0
+    player_ids = [pid for pid, _ in player_rounds]
 
-    # Calculate SP changes
-    winner_sp_change, loser_sp_change = await calculate_sp_changes(winner_rating, loser_rating, winner_rounds, loser_rounds, winner_expected_score)
+    await handle_inputted_players(player_ids, db)
 
-    # Update player stats
-    winner_new_sp = max(winner_sp + winner_sp_change, 0)  # Ensure SP doesn't go below 0
-    loser_new_sp = max(loser_sp - loser_sp_change, 0)  # Ensure SP doesn't go below 0
+    # --- Determine placements ---
+    sorted_players = sorted(player_rounds, key=lambda x: x[1], reverse=True)
 
-    if loser_new_sp == 0:
-        loser_sp_change = 0
-    
-    # Caculate straftcoin changes
-    winner_straftcoin_change, loser_straftcoin_change = await calculate_straftcoin_changes(winner_rounds, loser_rounds, winner_expected_score)
+    placements = []
+    for i, (pid, rounds) in enumerate(sorted_players):
+        if i > 0 and rounds == sorted_players[i - 1][1]:
+            placements.append((pid, rounds, placements[-1][2]))  # tied placement
+        else:
+            placements.append((pid, rounds, i + 1))
 
-    # Update straftcoin stats
-    winner_new_straftcoins = max(winner_straftcoins + winner_straftcoin_change, 0)
-    loser_new_straftcoins = max(loser_straftcoins + loser_straftcoin_change, 0)
+    total_rounds = sum(r for _, r in player_rounds)
 
-    # Get updated ranks
-    winner_rank, winner_emoji = await get_rank(winner_new_sp)
-    loser_rank, loser_emoji = await get_rank(loser_new_sp)
-    
-    # Calculate spread of match
-    spread = winner_rounds - loser_rounds
+    # --- Insert match row ---
+    cursor = await db.execute(
+        "INSERT INTO matches (rounds_to_win, total_rounds, game_mode) VALUES (?, ?, ?)",
+        (rounds_to_win, total_rounds, game_mode)
+    )
+    match_id = cursor.lastrowid
 
-    # Calculate total rounds in match
-    total_rounds = winner_rounds + loser_rounds
-    
-    #add winner to db
-    await add_player_to_db(winner_id, winner_new_rating, winner_new_sp, winner_rank, winner_rounds, loser_rounds, winner_new_straftcoins, 'winner', db)
+    # --- Fetch current ratings ---
+    ratings = {}
+    for pid in player_ids:
+        ratings[pid] = await get_rating(db, pid, mode=game_mode)
 
-    #add loser to db
-    await add_player_to_db(loser_id, loser_new_rating, loser_new_sp, loser_rank, winner_rounds, loser_rounds, loser_new_straftcoins, 'loser', db)
+    # --- Pairwise Elo (same for both modes) ---
+    elo_changes = {pid: 0.0 for pid in player_ids}
 
-    # Log the match
-    await db.execute("""
-        INSERT INTO matches (
-            winner_id, loser_id, winner_rounds, loser_rounds, 
-            winner_elo_change, loser_elo_change, winner_sp_change, 
-            loser_sp_change, timestamp, outcome, spread, total_rounds, 
-            winner_straftcoin_change, loser_straftcoin_change
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (winner_id, loser_id, winner_rounds, loser_rounds, 
-        winner_elo_change, -loser_elo_change, winner_sp_change, -loser_sp_change, 
-        datetime.now().isoformat(), winner_id, spread, total_rounds, 
-        winner_straftcoin_change, loser_straftcoin_change))
+    for i in range(len(placements)):
+        for j in range(i + 1, len(placements)):
+            pid_a, _, place_a = placements[i]
+            pid_b, _, place_b = placements[j]
+
+            expected_a = 1 / (1 + 10 ** ((ratings[pid_b] - ratings[pid_a]) / 400))
+            expected_b = 1 - expected_a
+
+            elo_changes[pid_a] += ELO_K * (1 - expected_a)
+            elo_changes[pid_b] += ELO_K * (0 - expected_b)
+
+    # --- Per-player SP: 1v1 derives from Elo, MP uses placement table ---
+    def get_1v1_sp(elo_change):
+        """Scale Elo gain/loss directly into SP with a floor/ceiling."""
+        if elo_change >= 0:
+            return max(5, round(elo_change * 1.5))
+        else:
+            return min(-5, round(elo_change * 1.5))
+
+    # --- Apply changes ---
+    results = []
+
+    for pid, rounds_won, placement in placements:
+        elo_change = round(elo_changes[pid], 2)
+        is_winner = placement == 1
+
+        if game_mode == '1v1':
+            sp_change = get_1v1_sp(elo_change)
+            straftcoin_change = 100 if is_winner else 30
+            sp_col         = 'sp_1v1'
+            rating_col     = 'rating_1v1'
+            rank_col       = 'rank_1v1'
+            wins_col       = 'wins_1v1'
+            losses_col     = 'losses_1v1'
+            rw_col         = 'rounds_won_1v1'
+            rl_col         = 'rounds_lost_1v1'
+            hr_col         = 'highest_rank_1v1'
+            hsp_col        = 'highest_sp_1v1'
+        else:
+            sp_change = MP_SP_BY_PLACEMENT.get(placement, MP_SP_FLOOR)
+            straftcoin_change = MP_SC_BY_PLACEMENT.get(placement, MP_SC_FLOOR)
+            sp_col         = 'sp_mp'
+            rating_col     = 'rating_mp'
+            rank_col       = 'rank_mp'
+            wins_col       = 'wins_mp'
+            losses_col     = 'losses_mp'
+            rw_col         = 'rounds_won_mp'
+            rl_col         = 'rounds_lost_mp'
+            hr_col         = 'highest_rank_mp'
+            hsp_col        = 'highest_sp_mp'
+
+        row = await db.execute(
+            f"SELECT {rating_col}, {sp_col}, straftcoins FROM players WHERE user_id = ?",
+            (pid,)
+        )
+        current = await row.fetchone()
+        current_rating, current_sp, current_straftcoins = current
+
+        new_rating     = current_rating + elo_change
+        new_sp         = max(0, current_sp + sp_change)
+        new_straftcoins = max(0, current_straftcoins + straftcoin_change)
+        new_rank, rank_emoji = await get_rank(new_sp)
+
+        rounds_lost_in_match = total_rounds - rounds_won
+
+        await db.execute(f"""
+            UPDATE players SET
+                {rating_col}   = ?,
+                {sp_col}       = ?,
+                {rank_col}     = ?,
+                {wins_col}     = {wins_col} + ?,
+                {losses_col}   = {losses_col} + ?,
+                {rw_col}       = {rw_col} + ?,
+                {rl_col}       = {rl_col} + ?,
+                straftcoins    = ?,
+                {hr_col}       = CASE WHEN ? > {hsp_col} THEN ? ELSE {hr_col} END,
+                {hsp_col}      = CASE WHEN ? > {hsp_col} THEN ? ELSE {hsp_col} END
+            WHERE user_id = ?
+        """, (
+            new_rating, new_sp, new_rank,
+            1 if is_winner else 0,
+            0 if is_winner else 1,
+            rounds_won,
+            rounds_lost_in_match,
+            new_straftcoins,
+            new_sp, new_rank,
+            new_sp, new_sp,
+            pid
+        ))
+
+        await db.execute("""
+            INSERT INTO match_participants
+                (match_id, player_id, placement, rounds_won, elo_change, sp_change, straftcoin_change)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (match_id, pid, placement, rounds_won, elo_change, sp_change, straftcoin_change))
+
+        results.append({
+            'match_id':          match_id,
+            'game_mode':         game_mode,
+            'player_id':         pid,
+            'placement':         placement,
+            'rounds_won':        rounds_won,
+            'sp_change':         sp_change,
+            'new_sp':            new_sp,
+            'elo_change':        elo_change,
+            'straftcoin_change': straftcoin_change,
+            'new_straftcoins':   new_straftcoins,
+            'rank':              new_rank,
+            'rank_emoji':        rank_emoji,
+        })
 
     await db.commit()
-
-    cursor = await db.execute('SELECT match_id FROM matches ORDER BY match_id DESC LIMIT 1;')
-    result = await cursor.fetchone()
-    match_id = result[0]
-
-    return winner_sp_change, winner_new_sp, winner_straftcoin_change, winner_new_straftcoins, winner_rank, winner_emoji, loser_sp_change, loser_new_sp, loser_straftcoin_change, loser_new_straftcoins, loser_rank, loser_emoji, spread, total_rounds, match_id
+    return sorted(results, key=lambda x: x['placement'])
