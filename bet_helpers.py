@@ -864,15 +864,67 @@ async def calculate_win_probability(score_a, score_b, scaling_factor=100):
 async def calculate_mp_win_probabilities(player_ids, db):
     """
     Estimates win probability for each player in an MP lobby.
-    Uses each player's 1v1 rating with softmax normalization.
+    Blends MP and 1v1 ratings weighted by MP games played,
+    then adjusts for MP win rate and round rate.
     """
-    ratings = {}
+    scores = {}
     for pid in player_ids:
-        ratings[pid] = await get_rating(db, pid, mode='1v1')
+        async with db.execute(
+            """SELECT rating_1v1, rating_mp, wins_mp, losses_mp,
+                      rounds_won_mp, rounds_lost_mp
+               FROM players WHERE user_id = ?""", (pid,)
+        ) as cur:
+            row = await cur.fetchone()
 
-    # Softmax over ratings scaled by Elo divisor
-    exp_vals = {pid: math.exp(r / 400) for pid, r in ratings.items()}
-    total    = sum(exp_vals.values())
-    probs    = {pid: round(v / total, 4) for pid, v in exp_vals.items()}
+        if row:
+            r1v1, rmp, w_mp, l_mp, rw_mp, rl_mp = row
+        else:
+            r1v1, rmp, w_mp, l_mp, rw_mp, rl_mp = 1000, 1000, 0, 0, 0, 0
 
-    return probs
+        mp_games = w_mp + l_mp
+        # Scale MP weight 0→1 over first 20 MP games; use 1v1 as fallback
+        blend          = min(1.0, mp_games / 20)
+        blended_rating = rmp * blend + r1v1 * (1 - blend)
+
+        # Small adjustments for MP-specific performance (±15% win rate, ±10% round rate)
+        mp_wr = w_mp / mp_games if mp_games > 0 else 0.5
+        mp_rr = rw_mp / (rw_mp + rl_mp) if (rw_mp + rl_mp) > 0 else 0.5
+
+        scores[pid] = (
+            math.exp(blended_rating / 400)
+            * (1.0 + 0.3 * (mp_wr - 0.5))
+            * (1.0 + 0.2 * (mp_rr - 0.5))
+        )
+
+    total = sum(scores.values())
+    return {pid: round(v / total, 4) for pid, v in scores.items()}
+
+
+def calculate_mp_last_place_probs(win_probs):
+    """
+    Derives last-place probability for each player using squared complement
+    so skill differences are more reflected than a flat uniform distribution.
+    """
+    raw   = {pid: (1 - p) ** 2 for pid, p in win_probs.items()}
+    total = sum(raw.values())
+    return {pid: round(v / total, 4) for pid, v in raw.items()}
+
+
+async def get_mp_h2h_rate(player_a_id, player_b_id, db):
+    """
+    Returns how often A finishes above B across shared MP matches,
+    or None if fewer than 3 shared games exist.
+    """
+    async with db.execute("""
+        SELECT
+            SUM(CASE WHEN mp1.placement < mp2.placement THEN 1 ELSE 0 END),
+            COUNT(*)
+        FROM match_participants mp1
+        JOIN match_participants mp2 ON mp1.match_id = mp2.match_id
+        JOIN matches m ON mp1.match_id = m.match_id
+        WHERE mp1.player_id = ? AND mp2.player_id = ? AND m.game_mode = 'mp'
+    """, (player_a_id, player_b_id)) as cursor:
+        row = await cursor.fetchone()
+    if not row or row[1] < 3:
+        return None
+    return row[0] / row[1]

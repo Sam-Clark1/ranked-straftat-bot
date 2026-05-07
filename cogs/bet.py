@@ -6,11 +6,12 @@ import aiosqlite
 import random
 import string
 from itertools import combinations
-from model_helpers import predict_variable
+from model_helpers import predict_variable, predict_mp_total_rounds, predict_mp_player_rounds_all
 from bet_helpers import (
     check_match_titles, handle_bet_placements, handle_parlay_placement,
     create_odds_display, percentage_to_odds, calc_performance_score,
-    calculate_win_probability, calculate_mp_win_probabilities
+    calculate_win_probability, calculate_mp_win_probabilities,
+    calculate_mp_last_place_probs, get_mp_h2h_rate
 )
 from command_helpers import (
     handle_inputted_players, get_emoji, get_players,
@@ -189,8 +190,8 @@ class Bet(commands.Cog):
 
             if game_mode == '1v1':
                 # -- Odds --
-                fav_ml_odds  = await percentage_to_odds(win_probs[fav.id])
-                dog_ml_odds  = await percentage_to_odds(win_probs[dog.id])
+                fav_ml_odds = await percentage_to_odds(win_probs[fav.id] * 1.04)
+                dog_ml_odds = await percentage_to_odds(win_probs[dog.id] * 1.04)
 
                 ou_total_line = round((rounds_to_win * 2) - predicted_spread - 0.5, 1)
 
@@ -258,13 +259,16 @@ class Bet(commands.Cog):
             else:
                 # ---- MP ----
 
-                # Moneyline per player
+                # Derive last-place probabilities from win probs
+                last_probs = calculate_mp_last_place_probs(win_probs)
+
+                # Moneyline per player (with vig)
                 for player in players:
                     bets_info[next_label()] = {
                         'type': 'moneyline',
                         'display': f"{player.display_name} Wins",
                         'value': player.display_name,
-                        'odds': await percentage_to_odds(win_probs[player.id]),
+                        'odds': await percentage_to_odds(win_probs[player.id] * 1.04),
                         'player_bet_on_id': player.id,
                         'player_b_id': None,
                         'self_bettable_ids': {player.id},
@@ -280,15 +284,21 @@ class Bet(commands.Cog):
                     )[:6]
 
                 for pa, pb in all_pairs:
-                    total = win_probs[pa.id] + win_probs[pb.id]
-                    prob_a = win_probs[pa.id] / total
-                    prob_b = 1 - prob_a
+                    field_total = win_probs[pa.id] + win_probs[pb.id]
+                    prob_a      = win_probs[pa.id] / field_total
+                    prob_b      = 1 - prob_a
+
+                    # Blend with direct MP head-to-head history if enough shared games
+                    h2h_rate = await get_mp_h2h_rate(pa.id, pb.id, db)
+                    if h2h_rate is not None:
+                        prob_a = prob_a * 0.7 + h2h_rate * 0.3
+                        prob_b = 1 - prob_a
 
                     bets_info[next_label()] = {
                         'type': 'head_to_head',
                         'display': f"{pa.display_name} > {pb.display_name}",
                         'value': f'{pa.display_name} beats {pb.display_name}',
-                        'odds': await percentage_to_odds(prob_a),
+                        'odds': await percentage_to_odds(prob_a * 1.04),
                         'player_bet_on_id': pa.id,
                         'player_b_id': pb.id,
                         'self_bettable_ids': {pa.id},
@@ -297,21 +307,24 @@ class Bet(commands.Cog):
                         'type': 'head_to_head',
                         'display': f"{pb.display_name} > {pa.display_name}",
                         'value': f'{pb.display_name} beats {pa.display_name}',
-                        'odds': await percentage_to_odds(prob_b),
+                        'odds': await percentage_to_odds(prob_b * 1.04),
                         'player_bet_on_id': pb.id,
                         'player_b_id': pa.id,
                         'self_bettable_ids': {pb.id},
                     }
 
                 # Podium (top 3) — 4+ players only
+                # Derived from last-place probability: P(top 3) = 1 - P(last) × (n - 3)
                 if len(players) >= 4:
                     for player in players:
-                        podium_prob = min(0.92, win_probs[player.id] * 3)
+                        podium_prob = max(0.05, min(0.95,
+                            1 - last_probs[player.id] * (len(players) - 3)
+                        ))
                         bets_info[next_label()] = {
                             'type': 'podium',
                             'display': f"{player.display_name} Top 3",
                             'value': f'{player.display_name} top3',
-                            'odds': await percentage_to_odds(podium_prob),
+                            'odds': await percentage_to_odds(podium_prob * 1.04),
                             'player_bet_on_id': player.id,
                             'player_b_id': None,
                             'self_bettable_ids': {player.id},
@@ -320,12 +333,11 @@ class Bet(commands.Cog):
                 # Last place — 4+ players only, nobody in-game may bet this
                 if len(players) >= 4:
                     for player in players:
-                        last_prob = (1 - win_probs[player.id]) / (len(players) - 1)
                         bets_info[next_label()] = {
                             'type': 'last_place',
                             'display': f"{player.display_name} Last",
                             'value': f'{player.display_name} last',
-                            'odds': await percentage_to_odds(last_prob),
+                            'odds': await percentage_to_odds(last_probs[player.id] * 1.04),
                             'player_bet_on_id': player.id,
                             'player_b_id': None,
                             'self_bettable_ids': set(),
@@ -333,7 +345,12 @@ class Bet(commands.Cog):
 
                 # O/U total rounds — in-game players may bet (no single player controls total)
                 all_player_ids = {p.id for p in players}
-                ou_total_line = round(rounds_to_win * len(players) * 0.55, 1)
+
+                _ou_total_pred = await predict_mp_total_rounds(player_ids, rounds_to_win, db)
+                _ou_total_raw  = _ou_total_pred if _ou_total_pred is not None else rounds_to_win * len(players) * 0.55
+                ou_total_line  = round(_ou_total_raw * 2) / 2
+
+                _ou_player_preds = await predict_mp_player_rounds_all(player_ids, rounds_to_win, db)
                 bets_info[next_label()] = {
                     'type': 'ou_total',
                     'display': 'O/U Total Rounds',
@@ -355,10 +372,18 @@ class Bet(commands.Cog):
 
                 # O/U per-player rounds — in-game players may NOT bet their own rounds
                 for player in players:
-                    expected = round(
-                        rounds_to_win * win_probs[player.id] * len(players) * 0.6, 1
-                    )
-                    ou_line = round(expected - 0.5, 1)
+                    if player.id in _ou_player_preds:
+                        _ou_raw = _ou_player_preds[player.id]
+                    else:
+                        _ou_raw = rounds_to_win * win_probs[player.id] * len(players) * 0.6
+
+                    # Clamp lines too close to the extremes so they stay meaningful
+                    if _ou_raw >= rounds_to_win - 1:
+                        ou_line = rounds_to_win - 1.5
+                    elif _ou_raw <= 1:
+                        ou_line = 1.5
+                    else:
+                        ou_line = round(_ou_raw * 2) / 2 - 0.5
                     others = {p.id for p in players if p.id != player.id}
                     bets_info[next_label()] = {
                         'type': 'ou_player',

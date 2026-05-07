@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 from command_helpers import match_to_db
 from bet_helpers import handle_bet_payouts
-from model_helpers import train_models
+from model_helpers import train_models, train_mp_models
 import aiosqlite
 
 class Record(commands.Cog):
@@ -172,7 +172,10 @@ class Record(commands.Cog):
                 for embed in bet_settlements_message:
                     await thread.send(embed=embed)
 
-            asyncio.create_task(train_models('spread'))
+            if results[0]['game_mode'] == '1v1':
+                asyncio.create_task(train_models('spread'))
+            else:
+                asyncio.create_task(train_mp_models())
 
     @record.error
     async def record_error(self, ctx, error):
