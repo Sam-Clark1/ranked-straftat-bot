@@ -1,6 +1,8 @@
 .env
 rankings.db
 spread_model.booster
+mp_player_ratio_model.ubj
+mp_total_ratio_model.ubj
 temp.py
 /__pycache__
 /cogs/__pycache__

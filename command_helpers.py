@@ -139,12 +139,12 @@ async def handle_inputted_players(player_ids, db):
                 straftcoins
             ) VALUES (
                 ?,
-                1000, 0, 'Unranked',
+                1000, 0, 'Shitterton IV',
                 0, 0, 0, 0,
-                'Unranked', 0,
-                1000, 0, 'Unranked',
+                'Shitterton IV', 0,
+                1000, 0, 'Shitterton IV',
                 0, 0, 0, 0,
-                'Unranked', 0,
+                'Shitterton IV', 0,
                 1000
             )
         """, (player_id,))
