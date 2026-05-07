@@ -70,6 +70,10 @@ class Record(commands.Cog):
                 await ctx.send("Invalid input: rounds_to_win must be at least 1.")
                 return
 
+            if len(player_rounds) == 2 and rounds_to_win < 10:
+                await ctx.send("Invalid input: 1v1 matches require at least 10 rounds to win.")
+                return
+
             if any(r < 0 for _, r in player_rounds):
                 await ctx.send("Invalid input: Round counts cannot be negative.")
                 return
@@ -169,6 +173,15 @@ class Record(commands.Cog):
                     await thread.send(embed=embed)
 
             asyncio.create_task(train_models('spread'))
+
+    @record.error
+    async def record_error(self, ctx, error):
+        if isinstance(error, (commands.MissingRequiredArgument, commands.BadArgument)):
+            await ctx.send(
+                "Invalid input: missing or invalid rounds to win.\n"
+                "Usage: `!record <rounds_to_win> @Player1 <rounds> @Player2 <rounds> ...`\n"
+                "Example: `!record 10 @Raf 10 @Dom 7`"
+            )
 
 
 async def setup(bot):

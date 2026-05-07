@@ -80,10 +80,14 @@ class Bet(commands.Cog):
                 await ctx.send("Invalid input: rounds_to_win must be at least 1.")
                 return
 
-            
+
             # MODE + MATCH TITLE
-            
-            game_mode   = '1v1' if len(players) == 2 else 'mp'
+
+            game_mode = '1v1' if len(players) == 2 else 'mp'
+
+            if game_mode == '1v1' and rounds_to_win < 10:
+                await ctx.send("Invalid input: 1v1 bets require at least 10 rounds to win.")
+                return
             match_title = f"[FT{rounds_to_win}] " + " vs ".join(
                 sorted(p.display_name for p in players)
             )
@@ -104,7 +108,7 @@ class Bet(commands.Cog):
             
             # COUNTDOWN SETUP
             
-            seconds = 120
+            seconds = 300
             minutes, secs = divmod(seconds, 60)
             bot_message = await ctx.send(
                 f"Bets for **{match_title}**\n"
@@ -570,8 +574,15 @@ class Bet(commands.Cog):
             )
             await thread.edit(locked=True)
 
+    @bet.error
+    async def bet_error(self, ctx, error):
+        if isinstance(error, (commands.MissingRequiredArgument, commands.BadArgument)):
+            await ctx.send(
+                "Invalid input: missing or invalid rounds to win.\n"
+                "Usage: `!bet <rounds_to_win> @Player1 @Player2 ...`\n"
+                "Example: `!bet 10 @Raf @Dom`"
+            )
 
-    
     # PARLAY CONFLICT CHECKER (static — shared by bet processing and validator)
     
     @staticmethod
@@ -581,9 +592,11 @@ class Bet(commands.Cog):
         ou_total_seen   = False
         spread_seen     = False
         h2h_pairs       = set()
+        h2h_graph       = {}   # directed graph: winner_pid → [loser_pids] for cycle detection
         ou_player_seen  = set()
         ml_player       = None
-        fav_spread_pid  = None  # set when a '-' (favorite) spread leg is present
+        fav_spread_pid  = None
+        dog_spread_pid  = None
         h2h_winner_pids = set()
         h2h_loser_pids  = set()
         podium_pids     = set()
@@ -601,28 +614,30 @@ class Bet(commands.Cog):
                 if (pid in podium_pids or pid in h2h_winner_pids
                         or pid in last_place_pids or pid in h2h_loser_pids):
                     return True
-                # Fav spread already present — conflicts with any ML:
-                #   fav ML + fav spread: correlated (covering spread guarantees ML win)
-                #   dog ML + fav spread: impossible (if fav covers, dog can't have won)
                 if fav_spread_pid is not None:
+                    return True
+                if dog_spread_pid == pid:
                     return True
                 ml_player = pid
 
             elif t == 'spread':
                 if spread_seen:
-                    return True  # Two spread legs are always mutually exclusive in 1v1
+                    return True
                 spread_seen = True
-                if leg['value'][0] == '-':  # Favorite covers spread
+                if leg['value'][0] == '-':
                     fav_spread_pid = pid
-                    # ML already set — conflicts in both directions (see moneyline block above)
                     if ml_player is not None:
                         return True
-                # Dog spread ('+') can coexist with either ML, so no extra check needed
+                else:
+                    dog_spread_pid = pid
+                    if ml_player == pid:
+                        return True
 
             elif t == 'podium':
                 if pid == ml_player:
                     return True
                 podium_pids.add(pid)
+
             elif t == 'head_to_head':
                 pair    = (pid, leg['player_b_id'])
                 reverse = (leg['player_b_id'], pid)
@@ -633,6 +648,8 @@ class Bet(commands.Cog):
                     return True
                 h2h_winner_pids.add(pid)
                 h2h_loser_pids.add(leg['player_b_id'])
+                h2h_graph.setdefault(pid, []).append(leg['player_b_id'])
+
             elif t == 'last_place':
                 if last_place_seen:
                     return True
@@ -640,15 +657,44 @@ class Bet(commands.Cog):
                 if pid == ml_player:
                     return True
                 last_place_pids.add(pid)
+
             elif t == 'ou_total':
                 if ou_total_seen:
                     return True
                 ou_total_seen = True
+
             elif t == 'ou_player':
                 if pid in ou_player_seen:
                     return True
                 ou_player_seen.add(pid)
 
+        # Detect transitive H2H cycles (e.g. A>B, B>C, C>A is impossible)
+        if Bet._h2h_has_cycle(h2h_graph):
+            return True
+
+        return False
+
+    @staticmethod
+    def _h2h_has_cycle(graph):
+        visited   = set()
+        rec_stack = set()
+
+        def dfs(node):
+            visited.add(node)
+            rec_stack.add(node)
+            for neighbor in graph.get(node, []):
+                if neighbor not in visited:
+                    if dfs(neighbor):
+                        return True
+                elif neighbor in rec_stack:
+                    return True
+            rec_stack.discard(node)
+            return False
+
+        for node in list(graph):
+            if node not in visited:
+                if dfs(node):
+                    return True
         return False
 
     
