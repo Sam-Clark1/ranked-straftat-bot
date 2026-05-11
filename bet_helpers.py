@@ -45,6 +45,14 @@ def _format_odds(odds):
     return f"+{odds}" if odds > 0 else str(odds)
 
 
+def _multiplier_to_american(multiplier):
+    """Convert a decimal parlay multiplier to American odds string."""
+    if multiplier >= 2.0:
+        return f"+{round((multiplier - 1) * 100)}"
+    else:
+        return str(round(-100 / (multiplier - 1)))
+
+
 # ─────────────────────────────────────────────
 # ODDS DISPLAY IMAGE
 # ─────────────────────────────────────────────
@@ -373,7 +381,7 @@ async def handle_parlay_placement(match_title, leg_labels, stake, bets_info, thr
     embed.add_field(name='Bettor',                    value=message.author.mention,      inline=False)
     embed.add_field(name=f'Legs ({len(leg_labels)})', value=legs_text,                   inline=False)
     embed.add_field(name='Stake',                     value=f'{stake} {sc_emoji}',       inline=True)
-    embed.add_field(name='Multiplier',                value=f'{multiplier:.2f}x',        inline=True)
+    embed.add_field(name='Odds',                      value=_multiplier_to_american(multiplier), inline=True)
     embed.add_field(name='To Win',                    value=f'{expected_win} {sc_emoji}',inline=True)
     embed.add_field(name='Balance',                   value=f'{current_coins - stake} {sc_emoji}', inline=True)
     await thread.send(embed=embed)
