@@ -31,6 +31,42 @@ def _add_vig(vig_range=(10, 15)):
     """Return a negative American odds value with house edge applied."""
     return -100 - random.randint(*vig_range)
 
+
+def _relabel_bets_for_display(bets_info):
+    """
+    Reassign labels A, B, C... in the same order the MP display table shows them
+    so that the label sequence matches the visual order bettors see.
+    """
+    _DISPLAY_ORDER = [
+        ('moneyline',    lambda m: -m['odds']),    # best → worst odds
+        ('head_to_head', lambda m: m['display']),  # by player name
+        ('podium',       lambda m: -m['odds']),    # best → worst odds
+        ('last_place',   lambda m: -m['odds']),    # best → worst odds
+        ('ou_total',     None),                    # preserve insertion order
+        ('ou_player',    lambda m: m['display']),  # by player name
+    ]
+
+    sections = {}
+    for meta in bets_info.values():
+        sections.setdefault(meta['type'], []).append(meta)
+
+    ordered = []
+    for type_key, sort_fn in _DISPLAY_ORDER:
+        if type_key not in sections:
+            continue
+        group = sections[type_key]
+        ordered.extend(sorted(group, key=sort_fn) if sort_fn else group)
+
+    def _gen():
+        for c in string.ascii_uppercase:
+            yield c
+        for first in string.ascii_uppercase:
+            for second in string.ascii_uppercase:
+                yield first + second
+
+    return {lbl: meta for lbl, meta in zip(_gen(), ordered)}
+
+
 _SINGLE_REGEX      = re.compile(r'^([A-Za-z]{1,2})\s+(\d+)$')
 _PARLAY_REGEX      = re.compile(r'^([A-Za-z]{1,2})(?:\s+[A-Za-z]{1,2}){1,5}\s+\d+$', re.IGNORECASE)
 _BET_ATTEMPT_REGEX = re.compile(r'^[A-Za-z]{1,2}(?:\s+\S+)+$')
@@ -453,6 +489,10 @@ class Bet(commands.Cog):
             # ODDS DISPLAY
             # create_odds_display written in part 3
             
+            # For MP, reassign labels so A, B, C... match the display sort order
+            if game_mode == 'mp':
+                bets_info = _relabel_bets_for_display(bets_info)
+
             await create_odds_display(thread, bets_info, game_mode)
 
             # Register so on_message / on_message_edit can validate during countdown

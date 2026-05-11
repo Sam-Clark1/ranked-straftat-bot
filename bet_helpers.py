@@ -144,8 +144,10 @@ def _build_mp_odds_image(bets_info):
             continue
         rows.append(('', section_title, '', True))
         section_bets = sections[type_key]
-        if type_key in ('moneyline', 'head_to_head','ou_player'):
-            section_bets = sorted(section_bets, key=lambda x: x[1]['odds'])
+        if type_key in ('moneyline', 'podium', 'last_place'):
+            section_bets = sorted(section_bets, key=lambda x: x[1]['odds'], reverse=True)
+        elif type_key in ('head_to_head', 'ou_player'):
+            section_bets = sorted(section_bets, key=lambda x: x[1]['display'])
         for lbl, meta in section_bets:
             description = meta['display']
             if meta['type'] in ('ou_total', 'ou_player'):
