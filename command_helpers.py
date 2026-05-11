@@ -1,3 +1,4 @@
+import math
 from datetime import datetime
 
 def chunk_message(text, max_len=1900):
@@ -159,17 +160,37 @@ async def match_to_db(player_rounds, rounds_to_win, db):
     Returns list of result dicts sorted by placement (1st first).
     """
 
-    ELO_K = 32
+    ELO_K = 100
 
     # --- Determine mode from player count ---
     game_mode = '1v1' if len(player_rounds) == 2 else 'mp'
 
-    # --- SP tables (MP only — 1v1 uses Elo-derived SP) ---
-    MP_SP_BY_PLACEMENT = {1: 50, 2: 25, 3: 10, 4: -5, 5: -10}
-    MP_SP_FLOOR = -15
+    # --- SP threshold table: expected_score → base SP for winner/1st ---
+    SP_THRESHOLDS = [
+        (0.95, 110), (0.85, 120), (0.80, 140), (0.70, 160),
+        (0.65, 160), (0.60, 170), (0.55, 180), (0.50, 200),
+        (0.40, 200), (0.30, 200), (0.20, 200), (0.10, 200),
+    ]
 
-    MP_SC_BY_PLACEMENT = {1: 100, 2: 50, 3: 30, 4: 15, 5: 10}
-    MP_SC_FLOOR = 5
+    # --- SC threshold table: expected_score → (base SC, loser SC fraction) ---
+    SC_THRESHOLDS = [
+        (0.95, 4000, 0.95), (0.85, 5000, 0.90), (0.80, 5200, 0.85),
+        (0.70, 5400, 0.80), (0.65, 5600, 0.775), (0.60, 5800, 0.75),
+        (0.55, 6000, 0.725), (0.50, 6200, 0.7), (0.40, 6400, 0.675),
+        (0.30, 6600, 0.65), (0.20, 6800, 0.625), (0.10, 7000, 0.6),
+    ]
+
+    def _sp_lookup(expected):
+        for threshold, sp in SP_THRESHOLDS:
+            if expected >= threshold:
+                return sp
+        return 250
+
+    def _sc_lookup(expected):
+        for threshold, sc, pct in SC_THRESHOLDS:
+            if expected >= threshold:
+                return sc, pct
+        return 10000, 0.5
 
     player_ids = [pid for pid, _ in player_rounds]
 
@@ -199,59 +220,116 @@ async def match_to_db(player_rounds, rounds_to_win, db):
     for pid in player_ids:
         ratings[pid] = await get_rating(db, pid, mode=game_mode)
 
-    # --- Pairwise Elo (same for both modes) ---
+    # --- Pairwise Elo with round-margin adjustment ---
     elo_changes = {pid: 0.0 for pid in player_ids}
 
     for i in range(len(placements)):
         for j in range(i + 1, len(placements)):
-            pid_a, _, place_a = placements[i]
-            pid_b, _, place_b = placements[j]
+            pid_a, rounds_a, _ = placements[i]
+            pid_b, rounds_b, _ = placements[j]
 
-            expected_a = 1 / (1 + 10 ** ((ratings[pid_b] - ratings[pid_a]) / 400))
-            expected_b = 1 - expected_a
+            expected_a     = 1 / (1 + 10 ** ((ratings[pid_b] - ratings[pid_a]) / 400))
+            round_ratio    = (rounds_a - rounds_b) / rounds_to_win
+            round_adj      = (ELO_K / 5) * round_ratio  # ±20 max, zero-sum
 
-            elo_changes[pid_a] += ELO_K * (1 - expected_a)
-            elo_changes[pid_b] += ELO_K * (0 - expected_b)
+            if game_mode == 'mp':
+                pair_total = rounds_a + rounds_b
+                actual_a   = rounds_a / pair_total if pair_total > 0 else 0.5
+            else:
+                actual_a = 1.0
 
-    # --- Per-player SP: 1v1 derives from Elo, MP uses placement table ---
-    def get_1v1_sp(elo_change):
-        """Scale Elo gain/loss directly into SP with a floor/ceiling."""
-        if elo_change >= 0:
-            return max(5, round(elo_change * 1.5))
-        else:
-            return min(-5, round(elo_change * 1.5))
+            elo_changes[pid_a] += ELO_K * (actual_a - expected_a) + round_adj
+            elo_changes[pid_b] += ELO_K * ((1 - actual_a) - (1 - expected_a)) - round_adj
+
+    # --- Pre-compute winner expected score and SP/SC for the match ---
+    pid_1st, rounds_1st, _ = placements[0]
+
+    if game_mode == '1v1':
+        pid_2nd, rounds_2nd, _ = placements[1]
+        exp_winner       = 1 / (1 + 10 ** ((ratings[pid_2nd] - ratings[pid_1st]) / 400))
+        winner_elo_diff  = ratings[pid_2nd] - ratings[pid_1st]   # +ve if underdog won
+        winner_rnd_ratio = (rounds_1st - rounds_2nd) / rounds_to_win
+        loser_rating_ref = ratings[pid_2nd]
+    else:
+        other_pids       = [pid for pid, _, pl in placements if pl != 1]
+        avg_other_rating = sum(ratings[p] for p in other_pids) / len(other_pids)
+        exp_winner       = 1 / (1 + 10 ** ((avg_other_rating - ratings[pid_1st]) / 400))
+        winner_elo_diff  = avg_other_rating - ratings[pid_1st]
+        avg_other_rounds = sum(r for _, r, pl in placements if pl != 1) / len(other_pids)
+        winner_rnd_ratio = (rounds_1st - avg_other_rounds) / rounds_to_win
+        loser_rating_ref = avg_other_rating
+
+    base_sp      = _sp_lookup(exp_winner)
+    sp_ratio     = base_sp // 4
+    winner_sp    = int(max(5, base_sp + (winner_elo_diff / 7.5) + (winner_rnd_ratio * sp_ratio)))
+
+    base_sc, loser_sc_pct = _sc_lookup(exp_winner)
+    sc_ratio     = base_sc // 4
+    winner_sc    = int(max(0, base_sc + (sc_ratio * winner_rnd_ratio)))
+    loser_sc_raw = int(max(0, base_sc * loser_sc_pct + sc_ratio * (1 - abs(winner_rnd_ratio))))
+
+    winner_rating_ref = ratings[pid_1st]
+    elo_diff_pct      = loser_rating_ref / winner_rating_ref if winner_rating_ref > 0 else 1.0
+    loser_sp_full     = -int(max(5, winner_sp * 0.35 * elo_diff_pct))
 
     # --- Apply changes ---
     results = []
 
     for pid, rounds_won, placement in placements:
         elo_change = round(elo_changes[pid], 2)
-        is_winner = placement == 1
+        is_winner  = placement == 1
 
         if game_mode == '1v1':
-            sp_change = get_1v1_sp(elo_change)
-            straftcoin_change = 100 if is_winner else 30
-            sp_col         = 'sp_1v1'
-            rating_col     = 'rating_1v1'
-            rank_col       = 'rank_1v1'
-            wins_col       = 'wins_1v1'
-            losses_col     = 'losses_1v1'
-            rw_col         = 'rounds_won_1v1'
-            rl_col         = 'rounds_lost_1v1'
-            hr_col         = 'highest_rank_1v1'
-            hsp_col        = 'highest_sp_1v1'
+            sp_change         = winner_sp if is_winner else loser_sp_full
+            straftcoin_change = winner_sc if is_winner else loser_sc_raw
+            sp_col     = 'sp_1v1'
+            rating_col = 'rating_1v1'
+            rank_col   = 'rank_1v1'
+            wins_col   = 'wins_1v1'
+            losses_col = 'losses_1v1'
+            rw_col     = 'rounds_won_1v1'
+            rl_col     = 'rounds_lost_1v1'
+            hr_col     = 'highest_rank_1v1'
+            hsp_col    = 'highest_sp_1v1'
         else:
-            sp_change = MP_SP_BY_PLACEMENT.get(placement, MP_SP_FLOOR)
-            straftcoin_change = MP_SC_BY_PLACEMENT.get(placement, MP_SC_FLOOR)
-            sp_col         = 'sp_mp'
-            rating_col     = 'rating_mp'
-            rank_col       = 'rank_mp'
-            wins_col       = 'wins_mp'
-            losses_col     = 'losses_mp'
-            rw_col         = 'rounds_won_mp'
-            rl_col         = 'rounds_lost_mp'
-            hr_col         = 'highest_rank_mp'
-            hsp_col        = 'highest_sp_mp'
+            # SP: top ceil(n/2) placements gain, rest lose
+            n_players   = len(placements)
+            gain_cutoff = math.ceil(n_players / 2)
+
+            if placement <= gain_cutoff:
+                # Gainers: 1st gets winner_sp, last gainer gets 25% of winner_sp
+                if gain_cutoff == 1:
+                    sp_change = winner_sp
+                else:
+                    frac = 1.0 - ((placement - 1) / (gain_cutoff - 1)) * 0.575
+                    sp_change = max(1, int(winner_sp * frac))
+            else:
+                # Losers: first loser gets 25% of full loss, last gets full loss
+                n_losers  = n_players - gain_cutoff
+                loser_pos = placement - gain_cutoff   # 1 = mildest, n_losers = worst
+                frac      = loser_pos / n_losers if n_losers > 0 else 1.0
+                sp_change = min(-1, int(loser_sp_full * frac))
+
+            # SC: winner gets full; lower placements get scaled fraction of loser base
+            
+            if is_winner:
+                straftcoin_change = winner_sc
+            else:
+                for i in range(1, n_players):
+                    if placement == i + 1:
+                        placement_pct = 0.9 - (0.105*(i-2))
+                        straftcoin_change = int(loser_sc_raw * placement_pct)
+                        break
+        
+            sp_col     = 'sp_mp'
+            rating_col = 'rating_mp'
+            rank_col   = 'rank_mp'
+            wins_col   = 'wins_mp'
+            losses_col = 'losses_mp'
+            rw_col     = 'rounds_won_mp'
+            rl_col     = 'rounds_lost_mp'
+            hr_col     = 'highest_rank_mp'
+            hsp_col    = 'highest_sp_mp'
 
         row = await db.execute(
             f"SELECT {rating_col}, {sp_col}, straftcoins FROM players WHERE user_id = ?",
