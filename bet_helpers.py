@@ -5,12 +5,10 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from io import BytesIO
 import math
-from command_helpers import get_straftcoin, get_emoji, get_rating
+from command_helpers import get_straftcoin, get_emoji
 
 
-# ─────────────────────────────────────────────
 # ODDS UTILITIES
-# ─────────────────────────────────────────────
 
 async def percentage_to_odds(percent_odds):
     percent_odds = max(0.01, min(0.99, percent_odds))
@@ -45,9 +43,15 @@ def _format_odds(odds):
     return f"+{odds}" if odds > 0 else str(odds)
 
 
-# ─────────────────────────────────────────────
+def _multiplier_to_american(multiplier):
+    """Convert a decimal parlay multiplier to American odds string."""
+    if multiplier >= 2.0:
+        return f"+{round((multiplier - 1) * 100)}"
+    else:
+        return str(round(-100 / (multiplier - 1)))
+
+
 # ODDS DISPLAY IMAGE
-# ─────────────────────────────────────────────
 
 def _build_1v1_odds_image(bets_info):
     bg_color            = '#40444b'
@@ -109,19 +113,11 @@ def _build_1v1_odds_image(bets_info):
     return buf
 
 
-def _build_mp_odds_image(bets_info):
+def _build_mp_section_image(bets_info, section_order):
+    """Render one MP odds image for the given list of (type_key, section_title) pairs."""
     BG        = '#2f3136'
     HEADER_BG = '#4f545c'
     TEXT      = '#ffffff'
-
-    SECTION_ORDER = [
-        ('moneyline',    '── Moneyline ──'),
-        ('head_to_head', '── Head-to-Head ──'),
-        ('podium',       '── Podium (Top 3) ──'),
-        ('last_place',   '── Last Place ──'),
-        ('ou_total',     '── Over/Under Total Rounds ──'),
-        ('ou_player',    '── Over/Under Player Rounds ──'),
-    ]
 
     sections = {}
     for lbl, meta in bets_info.items():
@@ -131,11 +127,16 @@ def _build_mp_odds_image(bets_info):
         sections[t].append((lbl, meta))
 
     rows = []
-    for type_key, section_title in SECTION_ORDER:
+    for type_key, section_title in section_order:
         if type_key not in sections:
             continue
         rows.append(('', section_title, '', True))
-        for lbl, meta in sections[type_key]:
+        section_bets = sections[type_key]
+        if type_key in ('moneyline', 'podium', 'last_place'):
+            section_bets = sorted(section_bets, key=lambda x: x[1]['odds'], reverse=True)
+        elif type_key in ('head_to_head', 'ou_player'):
+            section_bets = sorted(section_bets, key=lambda x: x[1]['display'])
+        for lbl, meta in section_bets:
             description = meta['display']
             if meta['type'] in ('ou_total', 'ou_player'):
                 description = f"{description}  {meta['value']}"
@@ -151,26 +152,29 @@ def _build_mp_odds_image(bets_info):
 
     xs    = [0.01, 0.10, 0.75]
     row_h = 1 / (len(rows) + 2)
-    y     = 0.97
+    # y = top of the current slot; text always sits at y - row_h/2 (true vertical centre)
+    y = 1.0
 
+    # Column headers occupy the first slot
     for col_x, col_label in zip(xs, ['', 'Bet', 'Odds']):
-        ax.text(col_x, y, col_label, transform=ax.transAxes,
-                color=TEXT, fontsize=9, fontweight='bold', va='top', ha='left')
-    y -= row_h * 0.8
+        ax.text(col_x, y - row_h / 2, col_label, transform=ax.transAxes,
+                color=TEXT, fontsize=9, fontweight='bold', va='center', ha='left')
+    y -= row_h
 
     for label, description, odds_str, is_header in rows:
         if is_header:
-            rect = plt.Rectangle((0, y - row_h * 0.15), 1, row_h * 0.85,
+            # Rectangle fills the full slot (bottom = y - row_h, top = y)
+            rect = plt.Rectangle((0, y - row_h), 1, row_h,
                                   transform=ax.transAxes, color=HEADER_BG, zorder=0)
             ax.add_patch(rect)
-            ax.text(0.01, y + row_h * 0.5, description, transform=ax.transAxes,
+            ax.text(0.01, y - row_h / 2, description, transform=ax.transAxes,
                     color=TEXT, fontsize=8.5, fontweight='bold', va='center', ha='left')
         else:
-            ax.text(xs[0], y + row_h * 0.3, label,       transform=ax.transAxes,
+            ax.text(xs[0], y - row_h / 2, label,       transform=ax.transAxes,
                     color=TEXT, fontsize=8.5, va='center', ha='left')
-            ax.text(xs[1], y + row_h * 0.3, description, transform=ax.transAxes,
+            ax.text(xs[1], y - row_h / 2, description, transform=ax.transAxes,
                     color=TEXT, fontsize=8.5, va='center', ha='left')
-            ax.text(xs[2], y + row_h * 0.3, odds_str,    transform=ax.transAxes,
+            ax.text(xs[2], y - row_h / 2, odds_str,    transform=ax.transAxes,
                     color=TEXT, fontsize=8.5, fontweight='bold', va='center', ha='left')
             ax.plot([0, 1], [y, y], color='#40444b', linewidth=0.4, transform=ax.transAxes)
         y -= row_h
@@ -183,19 +187,36 @@ def _build_mp_odds_image(bets_info):
     return buf
 
 
+_MP_IMAGE_GROUPS = [
+    [
+        ('moneyline',    '── Moneyline ──'),
+        ('head_to_head', '── Head-to-Head ──'),
+    ],
+    [
+        ('podium',    '── Podium (Top 3) ──'),
+        ('last_place','── Last Place ──'),
+        ('ou_total',  '── Over/Under Total Rounds ──'),
+        ('ou_player', '── Over/Under Player Rounds ──'),
+    ],
+]
+
+
 async def create_odds_display(thread, bets_info, game_mode):
     if game_mode == '1v1':
         buf = _build_1v1_odds_image(bets_info)
+        if buf:
+            await thread.send(file=discord.File(fp=buf, filename='odds.png'))
     else:
-        buf = _build_mp_odds_image(bets_info)
+        files = []
+        for i, group in enumerate(_MP_IMAGE_GROUPS, 1):
+            buf = _build_mp_section_image(bets_info, group)
+            if buf:
+                files.append(discord.File(fp=buf, filename=f'odds_{i}.png'))
+        if files:
+            await thread.send(files=files)
 
-    if buf:
-        await thread.send(file=discord.File(fp=buf, filename='odds.png'))
 
-
-# ─────────────────────────────────────────────
 # BET PLACEMENT — SINGLE BET
-# ─────────────────────────────────────────────
 
 async def handle_bet_placements(match_title, label, amount, bet_meta, thread, message, db):
     """
@@ -279,9 +300,7 @@ async def handle_bet_placements(match_title, label, amount, bet_meta, thread, me
     return True
 
 
-# ─────────────────────────────────────────────
 # BET PLACEMENT — PARLAY
-# ─────────────────────────────────────────────
 
 async def handle_parlay_placement(match_title, leg_labels, stake, bets_info, thread, message, db):
     """
@@ -373,16 +392,14 @@ async def handle_parlay_placement(match_title, leg_labels, stake, bets_info, thr
     embed.add_field(name='Bettor',                    value=message.author.mention,      inline=False)
     embed.add_field(name=f'Legs ({len(leg_labels)})', value=legs_text,                   inline=False)
     embed.add_field(name='Stake',                     value=f'{stake} {sc_emoji}',       inline=True)
-    embed.add_field(name='Multiplier',                value=f'{multiplier:.2f}x',        inline=True)
+    embed.add_field(name='Odds',                      value=_multiplier_to_american(multiplier), inline=True)
     embed.add_field(name='To Win',                    value=f'{expected_win} {sc_emoji}',inline=True)
     embed.add_field(name='Balance',                   value=f'{current_coins - stake} {sc_emoji}', inline=True)
     await thread.send(embed=embed)
     return True
 
 
-# ─────────────────────────────────────────────
 # MATCH TITLE LOOKUP
-# ─────────────────────────────────────────────
 
 async def check_match_titles(match_title, db):
     async with db.execute(
@@ -392,9 +409,7 @@ async def check_match_titles(match_title, db):
     return bets, match_title
 
 
-# ─────────────────────────────────────────────
 # WIN/LOSS DETERMINATION
-# ─────────────────────────────────────────────
 
 async def win_loss_determination(bets, match_id, spread, winner_id, total_rounds, db):
     """
@@ -523,9 +538,7 @@ async def win_loss_determination(bets, match_id, spread, winner_id, total_rounds
     return winning_bets + losing_bets + pushed_bets, winning_bets, pushed_bets
 
 
-# ─────────────────────────────────────────────
 # BET PAYOUTS
-# ─────────────────────────────────────────────
 
 async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rounds, db):
     """
@@ -598,7 +611,8 @@ async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rou
         emojis   = await get_emoji(['Poggers', 'KEKW', 'Straftcoin'])
         pog, kek, sc = emojis
 
-        fields = []  # (name, value) pairs collected before distributing into embeds
+        fields      = []   # (name, value) pairs collected before distributing into embeds
+        bettor_ids  = set()  # unique user IDs for content mentions
 
         single_bets = [b for b in all_bets if b[11] is None]
         for b in single_bets:
@@ -607,25 +621,26 @@ async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rou
              bet_type, bet_value, bet_odds, bet_amount,
              result, amount_won, _) = b
 
+            bettor_ids.add(user_id)
             balance  = await get_straftcoin(db, user_id)
-            bettor   = f'<@{user_id}>'
+            
             odds_str = _format_odds(bet_odds)
 
             if result == 'win':
                 fields.append((
-                    f'🏆 Bet Won {pog} — {bettor}',
+                    f'🏆 Bet Won {pog}',
                     f'{bet_type} **{bet_value}** @ {odds_str} · Stake: {bet_amount} {sc}\n'
                     f'+{amount_won} {sc} · Balance: {balance} {sc}'
                 ))
             elif result == 'loss':
                 fields.append((
-                    f'❌ Bet Lost {kek} — {bettor}',
+                    f'❌ Bet Lost {kek}',
                     f'{bet_type} **{bet_value}** @ {odds_str} · Stake: {bet_amount} {sc}\n'
                     f'Balance: {balance} {sc}'
                 ))
             elif result == 'push':
                 fields.append((
-                    f'↩️ Bet Pushed — {bettor}',
+                    f'↩️ Bet Pushed',
                     f'{bet_type} **{bet_value}** @ {odds_str}\n'
                     f'Returned: {bet_amount} {sc} · Balance: {balance} {sc}'
                 ))
@@ -639,17 +654,18 @@ async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rou
             if not p:
                 continue
             p_user, p_stake, p_mult, p_status, p_payout = p
+            bettor_ids.add(p_user)
             balance = await get_straftcoin(db, p_user)
-            bettor  = f'<@{p_user}>'
+            
             if p_status == 'won':
                 fields.append((
-                    f'🏆 Parlay Won {pog} — {bettor}',
+                    f'🏆 Parlay Won {pog}',
                     f'Stake: {p_stake} {sc} · {p_mult:.2f}x\n'
                     f'+{p_payout} {sc} · Balance: {balance} {sc}'
                 ))
             else:
                 fields.append((
-                    f'❌ Parlay Lost {kek} — {bettor}',
+                    f'❌ Parlay Lost {kek}',
                     f'Stake: {p_stake} {sc} · Balance: {balance} {sc}'
                 ))
 
@@ -671,7 +687,9 @@ async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rou
                 embed.add_field(name=name, value=value, inline=False)
             embeds.append(embed)
 
-        return embeds
+        # Mentions go in message content so Discord actually pings the bettors
+        mentions = ' '.join(f'<@{uid}>' for uid in bettor_ids)
+        return embeds, mentions
 
     except Exception as e:
         await db.rollback()
@@ -725,9 +743,7 @@ async def _settle_parlay(parlay_id, db):
     )
 
 
-# ─────────────────────────────────────────────
 # PERFORMANCE SCORING
-# ─────────────────────────────────────────────
 
 async def get_player_stats(playerid, db):
     """
