@@ -143,7 +143,10 @@ def _build_mp_odds_image(bets_info):
         if type_key not in sections:
             continue
         rows.append(('', section_title, '', True))
-        for lbl, meta in sections[type_key]:
+        section_bets = sections[type_key]
+        if type_key in ('moneyline', 'head_to_head','ou_player'):
+            section_bets = sorted(section_bets, key=lambda x: x[1]['odds'])
+        for lbl, meta in section_bets:
             description = meta['display']
             if meta['type'] in ('ou_total', 'ou_player'):
                 description = f"{description}  {meta['value']}"

@@ -301,7 +301,7 @@ class Bet(commands.Cog):
                         'odds': await percentage_to_odds(prob_a * 1.04),
                         'player_bet_on_id': pa.id,
                         'player_b_id': pb.id,
-                        'self_bettable_ids': {pa.id},
+                        'self_bettable_ids': {p.id for p in players if p.id != pb.id},
                     }
                     bets_info[next_label()] = {
                         'type': 'head_to_head',
@@ -310,7 +310,7 @@ class Bet(commands.Cog):
                         'odds': await percentage_to_odds(prob_b * 1.04),
                         'player_bet_on_id': pb.id,
                         'player_b_id': pa.id,
-                        'self_bettable_ids': {pb.id},
+                        'self_bettable_ids': {p.id for p in players if p.id != pa.id},
                     }
 
                 # Podium (top 3) — 4+ players only
@@ -327,7 +327,7 @@ class Bet(commands.Cog):
                             'odds': await percentage_to_odds(podium_prob * 1.04),
                             'player_bet_on_id': player.id,
                             'player_b_id': None,
-                            'self_bettable_ids': {player.id},
+                            'self_bettable_ids': {p.id for p in players},
                         }
 
                 # Last place — 4+ players only, nobody in-game may bet this
@@ -392,7 +392,7 @@ class Bet(commands.Cog):
                         'odds': _add_vig((5, 15)),
                         'player_bet_on_id': player.id,
                         'player_b_id': None,
-                        'self_bettable_ids': others,
+                        'self_bettable_ids': {p.id for p in players},  # player may bet their own over
                     }
                     bets_info[next_label()] = {
                         'type': 'ou_player',
@@ -401,7 +401,7 @@ class Bet(commands.Cog):
                         'odds': _add_vig((5, 15)),
                         'player_bet_on_id': player.id,
                         'player_b_id': None,
-                        'self_bettable_ids': others,
+                        'self_bettable_ids': others,  # player may NOT bet their own under
                     }
 
             
@@ -661,6 +661,8 @@ class Bet(commands.Cog):
             elif t == 'podium':
                 if pid == ml_player:
                     return True
+                if pid in last_place_pids:          # can't be top 3 and last
+                    return True
                 podium_pids.add(pid)
 
             elif t == 'head_to_head':
@@ -671,6 +673,8 @@ class Bet(commands.Cog):
                 h2h_pairs.add(pair)
                 if pid == ml_player or leg['player_b_id'] == ml_player:
                     return True
+                if pid in last_place_pids:          # last place player can't win a H2H
+                    return True
                 h2h_winner_pids.add(pid)
                 h2h_loser_pids.add(leg['player_b_id'])
                 h2h_graph.setdefault(pid, []).append(leg['player_b_id'])
@@ -680,6 +684,10 @@ class Bet(commands.Cog):
                     return True
                 last_place_seen = True
                 if pid == ml_player:
+                    return True
+                if pid in podium_pids:              # can't be last and top 3
+                    return True
+                if pid in h2h_winner_pids:          # can't be last and winner side of a H2H
                     return True
                 last_place_pids.add(pid)
 
