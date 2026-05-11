@@ -169,9 +169,7 @@ async def train_models(predicted_variable):
         booster.save_model("over_under_model.ubj")
 
 
-# ─────────────────────────────────────────────
 # MP MODEL HELPERS
-# ─────────────────────────────────────────────
 
 def _pstats(players_df, pid):
     """Return (rating_1v1, rating_mp, wr_1v1, wr_mp, rr_1v1, rr_mp) for a player."""
