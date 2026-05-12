@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from io import BytesIO
 import math
-from command_helpers import get_straftcoin, get_emoji, get_display_name
+from helpers.command_helpers import get_straftcoin, get_emoji, get_display_name
 
 
 # ODDS UTILITIES

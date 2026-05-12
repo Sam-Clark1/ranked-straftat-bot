@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from command_helpers import get_emoji
+from helpers.command_helpers import get_emoji
 
 class Help(commands.Cog):
     def __init__(self, bot):

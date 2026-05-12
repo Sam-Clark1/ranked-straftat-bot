@@ -98,9 +98,9 @@ async def prepare_features(matches_df_init, players_df_init, predicted_variable)
 async def predict_variable(player1_id, player2_id, predicted_variable, db):
 
     if predicted_variable == 'spread':
-        model_file = 'spread_model.ubj'
+        model_file = 'models/spread_model.ubj'
     elif predicted_variable == 'total_rounds':
-        model_file = 'over_under_model.ubj'
+        model_file = 'models/over_under_model.ubj'
 
     booster = xgb.Booster()
     booster.load_model(model_file)
@@ -164,9 +164,9 @@ async def train_models(predicted_variable):
     booster = xgb.train(_XGB_PARAMS, dtrain, num_boost_round=100)
 
     if predicted_variable == 'spread':
-        booster.save_model("spread_model.ubj")
+        booster.save_model("models/spread_model.ubj")
     elif predicted_variable == 'total_rounds':
-        booster.save_model("over_under_model.ubj")
+        booster.save_model("models/over_under_model.ubj")
 
 
 # MP MODEL HELPERS
@@ -295,7 +295,7 @@ async def train_mp_models():
     if len(X_t) >= 5:
         Xtr, _, ytr, _ = train_test_split(X_t, y_t, test_size=0.2, random_state=42)
         xgb.train(_XGB_PARAMS, xgb.DMatrix(Xtr, label=ytr), num_boost_round=100) \
-            .save_model('mp_total_ratio_model.ubj')
+            .save_model('models/mp_total_ratio_model.ubj')
         print(f"MP total rounds model trained on {len(X_t)} matches.")
     else:
         print(f"Skipping MP total rounds training — {len(X_t)} sample(s), need at least 5.")
@@ -304,7 +304,7 @@ async def train_mp_models():
     if len(X_p) >= 5:
         Xtr, _, ytr, _ = train_test_split(X_p, y_p, test_size=0.2, random_state=42)
         xgb.train(_XGB_PARAMS, xgb.DMatrix(Xtr, label=ytr), num_boost_round=100) \
-            .save_model('mp_player_ratio_model.ubj')
+            .save_model('models/mp_player_ratio_model.ubj')
         print(f"MP player rounds model trained on {len(X_p)} player-match rows.")
     else:
         print(f"Skipping MP player rounds training — {len(X_p)} sample(s), need at least 5.")
@@ -324,7 +324,7 @@ def _build_field_features(ps, player_ids):
 
 async def predict_mp_total_rounds(player_ids, rounds_to_win, db):
     """Returns predicted total rounds for an MP lobby, or None if model not trained."""
-    if not os.path.exists('mp_total_ratio_model.ubj'):
+    if not os.path.exists('models/mp_total_ratio_model.ubj'):
         return None
     players_raw = await db.execute_fetchall("SELECT * FROM players")
     ps  = pd.DataFrame(players_raw, columns=_PLAYERS_COLUMNS).set_index('user_id')
@@ -340,14 +340,14 @@ async def predict_mp_total_rounds(player_ids, rounds_to_win, db):
         'avg_round_rate_mp':  fld['fa_rrm'],
     }])
     booster = xgb.Booster()
-    booster.load_model('mp_total_ratio_model.ubj')
+    booster.load_model('models/mp_total_ratio_model.ubj')
     ratio = float(booster.predict(xgb.DMatrix(features))[0])
     return ratio * rounds_to_win
 
 
 async def predict_mp_player_rounds_all(player_ids, rounds_to_win, db):
     """Returns {player_id: predicted_rounds} for all players, or {} if model not trained."""
-    if not os.path.exists('mp_player_ratio_model.ubj'):
+    if not os.path.exists('models/mp_player_ratio_model.ubj'):
         return {}
     players_raw = await db.execute_fetchall("SELECT * FROM players")
     ps  = pd.DataFrame(players_raw, columns=_PLAYERS_COLUMNS).set_index('user_id')
@@ -371,6 +371,6 @@ async def predict_mp_player_rounds_all(player_ids, rounds_to_win, db):
             'num_players':             len(player_ids),
         })
     booster = xgb.Booster()
-    booster.load_model('mp_player_ratio_model.ubj')
+    booster.load_model('models/mp_player_ratio_model.ubj')
     preds = booster.predict(xgb.DMatrix(pd.DataFrame(feature_rows)))
     return {pid: max(0.0, float(p) * rounds_to_win) for pid, p in zip(player_ids, preds)}

@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 import aiosqlite
-from command_helpers import get_rank, get_sp
+from helpers.command_helpers import get_rank, get_sp
 from dotenv import load_dotenv
 import os 
 

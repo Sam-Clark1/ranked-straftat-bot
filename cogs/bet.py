@@ -6,14 +6,14 @@ import aiosqlite
 import random
 import string
 from itertools import combinations
-from model_helpers import predict_variable, predict_mp_total_rounds, predict_mp_player_rounds_all
-from bet_helpers import (
+from helpers.model_helpers import predict_variable, predict_mp_total_rounds, predict_mp_player_rounds_all
+from helpers.bet_helpers import (
     check_match_titles, handle_bet_placements, handle_parlay_placement,
     create_odds_display, percentage_to_odds, calc_performance_score,
     calculate_win_probability, calculate_mp_win_probabilities,
     calculate_mp_last_place_probs, get_mp_h2h_rate
 )
-from command_helpers import (
+from helpers.command_helpers import (
     handle_inputted_players, get_emoji, get_players,
     get_display_name, get_player_matches
 )

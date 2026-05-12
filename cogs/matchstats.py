@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 import aiosqlite
-from command_helpers import get_display_name
+from helpers.command_helpers import get_display_name
 
 _PALE_GREEN = discord.Color(0x90ee90)
 
