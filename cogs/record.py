@@ -1,7 +1,7 @@
 import asyncio
 import discord
 from discord.ext import commands
-from command_helpers import match_to_db
+from command_helpers import match_to_db, get_emoji
 from bet_helpers import handle_bet_payouts
 from model_helpers import train_models, train_mp_models
 import aiosqlite
@@ -115,7 +115,7 @@ class Record(commands.Cog):
             member_lookup   = {m.id: m for m, _ in player_rounds}
             game_mode       = results[0]['game_mode']
             mode_label      = '1v1' if game_mode == '1v1' else 'Multiplayer'
-            placement_emoji = {1: '🥇', 2: '🥈', 3: '🥉'}
+            straftcoin_emoji = await get_emoji(['Straftcoin']) 
 
             embed = discord.Embed(
                 title='Match Recorded',
@@ -127,14 +127,14 @@ class Record(commands.Cog):
                 member  = member_lookup[r['player_id']]
                 sp_str  = f"+{r['sp_change']}"         if r['sp_change']         >= 0 else str(r['sp_change'])
                 sc_str  = f"+{r['straftcoin_change']}" if r['straftcoin_change'] >= 0 else str(r['straftcoin_change'])
-                elo_str = f"+{r['elo_change']:.1f}"    if r['elo_change']        >= 0 else f"{r['elo_change']:.1f}"
-                icon    = placement_emoji.get(r['placement'], f"#{r['placement']}")
+                icon    = f"#{r['placement']}"
 
                 embed.add_field(
                     name=f"{icon} {member.display_name} — {r['rounds_won']} rounds",
                     value=(
-                        f"SP: {sp_str} → **{r['new_sp']}** · Rank: **{r['rank']}** {r['rank_emoji']}\n"
-                        f"SC: {sc_str} → **{r['new_straftcoins']}** · Elo: {elo_str}"
+                        f"SP: {sp_str} → **{r['new_sp']}**\n"
+                        f"Rank: **{r['rank']}** {r['rank_emoji']}\n"
+                        f"Straftcoins: {sc_str} → **{r['new_straftcoins']}**{straftcoin_emoji[0]}"
                     ),
                     inline=(game_mode == '1v1')
                 )
@@ -164,14 +164,14 @@ class Record(commands.Cog):
             )
 
             if bet_settlements_message:
-                embeds, mentions = bet_settlements_message
+                embeds, _ = bet_settlements_message
                 winner_member = member_lookup[winner['player_id']]
                 thread = await ctx.channel.create_thread(
                     name=f"Resolved Bets — {winner_member.display_name}'s match",
                     message=message
                 )
-                for i, embed in enumerate(embeds):
-                    await thread.send(content=mentions if i == 0 else None, embed=embed)
+                for embed in embeds:
+                    await thread.send(embed=embed)
 
             if results[0]['game_mode'] == '1v1':
                 asyncio.create_task(train_models('spread'))

@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from io import BytesIO
 import math
-from command_helpers import get_straftcoin, get_emoji
+from command_helpers import get_straftcoin, get_emoji, get_display_name
 
 
 # ODDS UTILITIES
@@ -611,8 +611,8 @@ async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rou
         emojis   = await get_emoji(['Poggers', 'KEKW', 'Straftcoin'])
         pog, kek, sc = emojis
 
-        fields      = []   # (name, value) pairs collected before distributing into embeds
-        bettor_ids  = set()  # unique user IDs for content mentions
+        fields     = []   # (name, value) pairs collected before distributing into embeds
+        bettor_ids = set()
 
         single_bets = [b for b in all_bets if b[11] is None]
         for b in single_bets:
@@ -621,28 +621,30 @@ async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rou
              bet_type, bet_value, bet_odds, bet_amount,
              result, amount_won, _) = b
 
-            bettor_ids.add(user_id)
             balance  = await get_straftcoin(db, user_id)
-            
+            bettor_ids.add(user_id)
             odds_str = _format_odds(bet_odds)
 
             if result == 'win':
                 fields.append((
                     f'🏆 Bet Won {pog}',
-                    f'{bet_type} **{bet_value}** @ {odds_str} · Stake: {bet_amount} {sc}\n'
-                    f'+{amount_won} {sc} · Balance: {balance} {sc}'
+                    f'<@{user_id}>\n'
+                    f'Bet: {bet_type} (**{bet_value}**, {bet_amount}{sc}, {odds_str})\n'
+                    f'Amount Won: {amount_won}{sc} · Balance: {balance}{sc}'
                 ))
             elif result == 'loss':
                 fields.append((
                     f'❌ Bet Lost {kek}',
-                    f'{bet_type} **{bet_value}** @ {odds_str} · Stake: {bet_amount} {sc}\n'
-                    f'Balance: {balance} {sc}'
+                    f'<@{user_id}>\n'
+                    f'Bet: {bet_type} (**{bet_value}**, {bet_amount}{sc}, {odds_str})\n'
+                    f'Balance: {balance}{sc}'
                 ))
             elif result == 'push':
                 fields.append((
                     f'↩️ Bet Pushed',
-                    f'{bet_type} **{bet_value}** @ {odds_str}\n'
-                    f'Returned: {bet_amount} {sc} · Balance: {balance} {sc}'
+                    f'<@{user_id}>\n'
+                    f'Bet: {bet_type} (**{bet_value}**, {bet_amount}{sc}, {odds_str})\n'
+                    f'Returned: {bet_amount}{sc} · Balance: {balance}{sc}'
                 ))
 
         for pid in parlay_ids:
@@ -654,19 +656,35 @@ async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rou
             if not p:
                 continue
             p_user, p_stake, p_mult, p_status, p_payout = p
-            bettor_ids.add(p_user)
             balance = await get_straftcoin(db, p_user)
-            
+            bettor_ids.add(p_user)
+
+            async with db.execute(
+                "SELECT bet_type, bet_value, bet_odds, result "
+                "FROM past_bets WHERE parlay_id = ? ORDER BY bet_id ASC",
+                (pid,)
+            ) as cursor:
+                legs = await cursor.fetchall()
+
+            leg_lines = []
+            for leg_type, leg_value, leg_odds, leg_result in legs:
+                icon = '✅' if leg_result == 'win' else ('↩️' if leg_result == 'push' else '❌')
+                leg_lines.append(f'{icon} {leg_type} **{leg_value}** @ {_format_odds(leg_odds)}')
+            legs_str = '\n'.join(leg_lines)
+
             if p_status == 'won':
                 fields.append((
                     f'🏆 Parlay Won {pog}',
-                    f'Stake: {p_stake} {sc} · {p_mult:.2f}x\n'
-                    f'+{p_payout} {sc} · Balance: {balance} {sc}'
+                    f'<@{p_user}> · Stake: {p_stake}{sc} · {_multiplier_to_american(p_mult)}\n'
+                    f'{legs_str}\n'
+                    f'Amount Won: {p_payout}{sc} · Balance: {balance}{sc}'
                 ))
             else:
                 fields.append((
                     f'❌ Parlay Lost {kek}',
-                    f'Stake: {p_stake} {sc} · Balance: {balance} {sc}'
+                    f'<@{p_user}> · Stake: {p_stake}{sc}· {_multiplier_to_american(p_mult)}\n'
+                    f'{legs_str}\n'
+                    f'Balance: {balance}{sc}'
                 ))
 
         if not fields:

@@ -18,15 +18,6 @@ from command_helpers import (
     get_display_name, get_player_matches
 )
 
-
-def _american_to_decimal(odds):
-    """Convert American odds to decimal multiplier."""
-    if odds < 0:
-        return 1 + (100 / abs(odds))
-    else:
-        return 1 + (odds / 100)
-
-
 def _add_vig(vig_range=(10, 15)):
     """Return a negative American odds value with house edge applied."""
     return -100 - random.randint(*vig_range)
@@ -145,7 +136,7 @@ class Bet(commands.Cog):
             
             # COUNTDOWN SETUP
             
-            seconds = 30
+            seconds = 60
             minutes, secs = divmod(seconds, 60)
             bot_message = await ctx.send(
                 f"Bets for **{match_title}**\n"
@@ -366,7 +357,7 @@ class Bet(commands.Cog):
                             'self_bettable_ids': {p.id for p in players},
                         }
 
-                # Last place — 4+ players only, nobody in-game may bet this
+                # Last place — 4+ players only; in-game players can bet others' last, not their own
                 if len(players) >= 4:
                     for player in players:
                         bets_info[next_label()] = {
@@ -376,7 +367,7 @@ class Bet(commands.Cog):
                             'odds': await percentage_to_odds(last_probs[player.id] * 1.04),
                             'player_bet_on_id': player.id,
                             'player_b_id': None,
-                            'self_bettable_ids': set(),
+                            'self_bettable_ids': {p.id for p in players if p.id != player.id},
                         }
 
                 # O/U total rounds — in-game players may bet (no single player controls total)
@@ -713,7 +704,9 @@ class Bet(commands.Cog):
                 h2h_pairs.add(pair)
                 if pid == ml_player or leg['player_b_id'] == ml_player:
                     return True
-                if pid in last_place_pids:          # last place player can't win a H2H
+                if pid in last_place_pids:              # last place player can't win a H2H
+                    return True
+                if leg['player_b_id'] in last_place_pids:  # if loser is last, H2H is guaranteed
                     return True
                 h2h_winner_pids.add(pid)
                 h2h_loser_pids.add(leg['player_b_id'])
@@ -728,6 +721,8 @@ class Bet(commands.Cog):
                 if pid in podium_pids:              # can't be last and top 3
                     return True
                 if pid in h2h_winner_pids:          # can't be last and winner side of a H2H
+                    return True
+                if pid in h2h_loser_pids:           # if last, any H2H where they lose is guaranteed
                     return True
                 last_place_pids.add(pid)
 
