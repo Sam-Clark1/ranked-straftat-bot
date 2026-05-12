@@ -164,14 +164,14 @@ class Record(commands.Cog):
             )
 
             if bet_settlements_message:
-                embeds, mentions = bet_settlements_message
+                embeds, _ = bet_settlements_message
                 winner_member = member_lookup[winner['player_id']]
                 thread = await ctx.channel.create_thread(
                     name=f"Resolved Bets — {winner_member.display_name}'s match",
                     message=message
                 )
-                for i, embed in enumerate(embeds):
-                    await thread.send(content=mentions if i == 0 else None, embed=embed)
+                for embed in embeds:
+                    await thread.send(embed=embed)
 
             if results[0]['game_mode'] == '1v1':
                 asyncio.create_task(train_models('spread'))
