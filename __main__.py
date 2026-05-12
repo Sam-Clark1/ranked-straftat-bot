@@ -4,6 +4,8 @@ import aiosqlite
 import os
 from dotenv import load_dotenv
 
+os.makedirs('models', exist_ok=True)
+
 intents = discord.Intents.default()
 intents.members = True
 intents.messages = True
