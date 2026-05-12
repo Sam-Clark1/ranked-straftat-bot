@@ -136,7 +136,7 @@ class Bet(commands.Cog):
             
             # COUNTDOWN SETUP
             
-            seconds = 60
+            seconds = 180
             minutes, secs = divmod(seconds, 60)
             bot_message = await ctx.send(
                 f"Bets for **{match_title}**\n"
