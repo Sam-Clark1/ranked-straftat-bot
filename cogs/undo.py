@@ -67,6 +67,8 @@ class Undo(commands.Cog):
                 losses_col = 'losses_1v1'
                 rw_col     = 'rounds_won_1v1'
                 rl_col     = 'rounds_lost_1v1'
+                hr_col     = 'highest_rank_1v1'
+                hsp_col    = 'highest_sp_1v1'
             else:
                 sp_col     = 'sp_mp'
                 rating_col = 'rating_mp'
@@ -75,6 +77,8 @@ class Undo(commands.Cog):
                 losses_col = 'losses_mp'
                 rw_col     = 'rounds_won_mp'
                 rl_col     = 'rounds_lost_mp'
+                hr_col     = 'highest_rank_mp'
+                hsp_col    = 'highest_sp_mp'
 
             
             # REVERSE EACH PARTICIPANT'S STATS
@@ -91,14 +95,16 @@ class Undo(commands.Cog):
 
                 await db.execute(f"""
                     UPDATE players SET
-                        {rating_col} = {rating_col} - ?,
+                        {rating_col} = ROUND({rating_col} - ?, 2),
                         {sp_col}     = ?,
                         {rank_col}   = ?,
                         {wins_col}   = {wins_col}   - ?,
                         {losses_col} = {losses_col} - ?,
                         {rw_col}     = {rw_col}     - ?,
                         {rl_col}     = {rl_col}     - ?,
-                        straftcoins  = MAX(0, straftcoins - ?)
+                        straftcoins  = MAX(0, straftcoins - ?),
+                        {hsp_col}    = MIN({hsp_col}, ?),
+                        {hr_col}     = CASE WHEN ? < {hsp_col} THEN ? ELSE {hr_col} END
                     WHERE user_id = ?
                 """, (
                     elo_change,
@@ -109,6 +115,8 @@ class Undo(commands.Cog):
                     rounds_won,
                     rounds_lost_in_match,
                     straftcoin_change,
+                    restored_sp,
+                    restored_sp, restored_rank,
                     player_id
                 ))
 

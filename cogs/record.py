@@ -115,7 +115,6 @@ class Record(commands.Cog):
             member_lookup   = {m.id: m for m, _ in player_rounds}
             game_mode       = results[0]['game_mode']
             mode_label      = '1v1' if game_mode == '1v1' else 'Multiplayer'
-            placement_emoji = {1: '🥇', 2: '🥈', 3: '🥉'}
             straftcoin_emoji = await get_emoji(['Straftcoin']) 
 
             embed = discord.Embed(
@@ -128,7 +127,6 @@ class Record(commands.Cog):
                 member  = member_lookup[r['player_id']]
                 sp_str  = f"+{r['sp_change']}"         if r['sp_change']         >= 0 else str(r['sp_change'])
                 sc_str  = f"+{r['straftcoin_change']}" if r['straftcoin_change'] >= 0 else str(r['straftcoin_change'])
-                # icon    = placement_emoji.get(r['placement'], f"#{r['placement']}")
                 icon    = f"#{r['placement']}"
 
                 embed.add_field(

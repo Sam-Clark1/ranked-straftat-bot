@@ -370,11 +370,14 @@ async def match_to_db(player_rounds, rounds_to_win, db):
             pid
         ))
 
+        # Store the actual change applied (post-floor) so undo can reverse it exactly
+        actual_sp_change = new_sp - current_sp
+
         await db.execute("""
             INSERT INTO match_participants
                 (match_id, player_id, placement, rounds_won, elo_change, sp_change, straftcoin_change)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (match_id, pid, placement, rounds_won, elo_change, sp_change, straftcoin_change))
+        """, (match_id, pid, placement, rounds_won, elo_change, actual_sp_change, straftcoin_change))
 
         results.append({
             'match_id':          match_id,
