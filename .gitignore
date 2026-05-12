@@ -8,6 +8,7 @@ temp.py
 /__pycache__
 /cogs/__pycache__
 /cogs/dumb.py
+/helpers/__pycache__
 .claude
 rankings_OLD.db
 rankings_NEW.db

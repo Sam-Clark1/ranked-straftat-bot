@@ -4,8 +4,8 @@ import discord
 from discord.ext import commands
 import random
 from dotenv import load_dotenv
-from command_helpers import match_to_db, get_display_name
-from model_helpers import train_models
+from helpers.command_helpers import match_to_db, get_display_name
+from helpers.model_helpers import train_models
 import aiosqlite
 
 class Dumb(commands.Cog):

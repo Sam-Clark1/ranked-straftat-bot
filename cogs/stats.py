@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 import aiosqlite
-from command_helpers import get_emoji
+from helpers.command_helpers import get_emoji
 
 _PALE_GREEN = discord.Color(0x90ee90)
 
