@@ -137,11 +137,8 @@ class Bet(commands.Cog):
 
             
             # COUNTDOWN SETUP
-            
-            load_dotenv()
-            bet_time = os.environ['BET_TIME_SECONDS']
-            seconds = bet_time if bet_time else 300
 
+            seconds = int(os.environ.get('BET_TIME_SECONDS', 300))
             minutes, secs = divmod(seconds, 60)
             bot_message = await ctx.send(
                 f"Bets for **{match_title}**\n"
