@@ -23,8 +23,7 @@ class StraftcoinLB(commands.Cog):
             await ctx.send('No Players in Database')
             return
 
-        top_message = await ctx.send('**Straftcoin Leaderboard**')
-        thread = await ctx.channel.create_thread(name='Straftcoin Leaderboard', message=top_message)
+        thread = await ctx.message.create_thread(name='Straftcoin Leaderboard')
 
         placement_emoji = {1: '🥇', 2: '🥈', 3: '🥉'}
         embeds  = []

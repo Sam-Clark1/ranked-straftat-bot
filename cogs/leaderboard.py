@@ -29,8 +29,7 @@ class Leaderboard(commands.Cog):
             await ctx.send('No Players in Database')
             return
 
-        top_message = await ctx.send(f'**Ranked Straftat {title}**')
-        thread = await ctx.channel.create_thread(name=title, message=top_message)
+        thread = await ctx.message.create_thread(name=title)
 
         placement_emoji = {1: '🥇', 2: '🥈', 3: '🥉'}
         embeds  = []

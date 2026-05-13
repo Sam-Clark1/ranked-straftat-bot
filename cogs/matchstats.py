@@ -31,11 +31,7 @@ class Matchstats(commands.Cog):
             await ctx.send(f"No match stats found for {player.mention}.")
             return
 
-        stats_message = await ctx.send(f"**Match Stats for {player.mention}**")
-        thread = await ctx.channel.create_thread(
-            name=f'Match Stats for {player.display_name}',
-            message=stats_message
-        )
+        thread = await ctx.message.create_thread(name=f'Match Stats for {player.display_name}')
 
         embeds      = []
         current     = discord.Embed(title=f'Match Stats — {player.display_name}', color=_PALE_GREEN)
