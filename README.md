@@ -98,6 +98,7 @@ Create a `.env` file in the project root:
 ```env
 DISCORD_API_KEY=your_bot_token_here
 ADMIN_ID=your_discord_user_id_here
+BET_TIME_SECONDS=integer of time (in seconds) to allow for betting when called (seconds are converted to minutes. Defaults to 300 second which is 5 minutes)
 ```
 
 - `ADMIN_ID` is the Discord user ID that is authorised to use `!undo`

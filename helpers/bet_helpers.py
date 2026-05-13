@@ -288,13 +288,16 @@ async def handle_bet_placements(match_title, label, amount, bet_meta, thread, me
     )
     await db.commit()
 
-    embed = discord.Embed(title='Bet Placed', color=discord.Color(0x90ee90))
-    embed.add_field(name='Bettor',  value=message.author.mention,              inline=True)
-    embed.add_field(name='Bet',     value=f'{label} — {bet_meta["display"]}',  inline=True)
-    embed.add_field(name='Odds',    value=_format_odds(bet_odds),               inline=True)
-    embed.add_field(name='Stake',   value=f'{amount} {sc_emoji}',              inline=True)
-    embed.add_field(name='To Win',  value=f'{amount_to_win} {sc_emoji}',       inline=True)
-    embed.add_field(name='Balance', value=f'{new_balance} {sc_emoji}',         inline=True)
+    embed = discord.Embed(color=discord.Color(0x90ee90))
+    embed.add_field(
+        name='Bet Placed',
+        value=(
+            f'<@{user_id}>\n'
+            f'{bet_meta["display"]} | Odds: {_format_odds(bet_odds)} | Stake: {amount}{sc_emoji}\n'
+            f'To Win: {amount_to_win}{sc_emoji} | Balance: {new_balance} {sc_emoji}'
+        ),
+        inline=False
+    )
     await thread.send(embed=embed)
 
     return True
@@ -385,16 +388,19 @@ async def handle_parlay_placement(match_title, leg_labels, stake, bets_info, thr
 
     # --- Confirmation message ---
     legs_text = '\n'.join(
-        f'{lbl}: {bets_info[lbl]["display"]} ({_format_odds(bets_info[lbl]["odds"])})'
+        f'{lbl}: {bets_info[lbl]["display"]} {_format_odds(bets_info[lbl]["odds"])}'
         for lbl in leg_labels
     )
-    embed = discord.Embed(title='Parlay Placed', color=discord.Color(0x90ee90))
-    embed.add_field(name='Bettor',                    value=message.author.mention,      inline=False)
-    embed.add_field(name=f'Legs ({len(leg_labels)})', value=legs_text,                   inline=False)
-    embed.add_field(name='Stake',                     value=f'{stake} {sc_emoji}',       inline=True)
-    embed.add_field(name='Odds',                      value=_multiplier_to_american(multiplier), inline=True)
-    embed.add_field(name='To Win',                    value=f'{expected_win} {sc_emoji}',inline=True)
-    embed.add_field(name='Balance',                   value=f'{current_coins - stake} {sc_emoji}', inline=True)
+    embed = discord.Embed(color=discord.Color(0x90ee90))
+    embed.add_field(
+        name=f'Parlay Placed ({len(leg_labels)} legs)',
+        value=(
+            f'<@{user_id}> | Stake: {stake}{sc_emoji} | Odds: {_multiplier_to_american(multiplier)}\n'
+            f'{legs_text}\n'
+            f'To Win: {expected_win}{sc_emoji} | Balance: {current_coins - stake} {sc_emoji}'
+        ),
+        inline=False
+    )
     await thread.send(embed=embed)
     return True
 
@@ -630,13 +636,13 @@ async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rou
                     f'🏆 Bet Won {pog}',
                     f'<@{user_id}>\n'
                     f'Bet: {bet_type} (**{bet_value}**, {bet_amount}{sc}, {odds_str})\n'
-                    f'Amount Won: {amount_won}{sc} · Balance: {balance}{sc}'
+                    f'Amount Won: {amount_won}{sc} | Balance: {balance}{sc}'
                 ))
             elif result == 'loss':
                 fields.append((
                     f'❌ Bet Lost {kek}',
                     f'<@{user_id}>\n'
-                    f'Bet: {bet_type} (**{bet_value}**, {bet_amount}{sc}, {odds_str})\n'
+                    f'Bet: {bet_type} (**{bet_value}**, Stake: {bet_amount}{sc}, Odds: {odds_str})\n'
                     f'Balance: {balance}{sc}'
                 ))
             elif result == 'push':
@@ -644,7 +650,7 @@ async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rou
                     f'↩️ Bet Pushed',
                     f'<@{user_id}>\n'
                     f'Bet: {bet_type} (**{bet_value}**, {bet_amount}{sc}, {odds_str})\n'
-                    f'Returned: {bet_amount}{sc} · Balance: {balance}{sc}'
+                    f'Returned: {bet_amount}{sc} | Balance: {balance}{sc}'
                 ))
 
         for pid in parlay_ids:
@@ -669,20 +675,20 @@ async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rou
             leg_lines = []
             for leg_type, leg_value, leg_odds, leg_result in legs:
                 icon = '✅' if leg_result == 'win' else ('↩️' if leg_result == 'push' else '❌')
-                leg_lines.append(f'{icon} {leg_type} **{leg_value}** @ {_format_odds(leg_odds)}')
+                leg_lines.append(f'{icon} {leg_type} **{leg_value}**  {_format_odds(leg_odds)}')
             legs_str = '\n'.join(leg_lines)
 
             if p_status == 'won':
                 fields.append((
                     f'🏆 Parlay Won {pog}',
-                    f'<@{p_user}> · Stake: {p_stake}{sc} · {_multiplier_to_american(p_mult)}\n'
+                    f'<@{p_user}> | Stake: {p_stake}{sc} | Odds: {_multiplier_to_american(p_mult)}\n'
                     f'{legs_str}\n'
-                    f'Amount Won: {p_payout}{sc} · Balance: {balance}{sc}'
+                    f'Amount Won: {p_payout}{sc} | Balance: {balance}{sc}'
                 ))
             else:
                 fields.append((
                     f'❌ Parlay Lost {kek}',
-                    f'<@{p_user}> · Stake: {p_stake}{sc}· {_multiplier_to_american(p_mult)}\n'
+                    f'<@{p_user}> | Stake: {p_stake}{sc}| Odds: {_multiplier_to_american(p_mult)}\n'
                     f'{legs_str}\n'
                     f'Balance: {balance}{sc}'
                 ))
@@ -699,7 +705,7 @@ async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rou
                 embed.title       = 'Bet Settlements'
                 embed.description = (
                     f'**{match_title}**\n'
-                    f'Spread (1st vs 2nd): {spread} · Total Rounds: {total_rounds}'
+                    f'Spread (1st vs 2nd): {spread} | Total Rounds: {total_rounds}'
                 )
             for name, value in chunk:
                 embed.add_field(name=name, value=value, inline=False)

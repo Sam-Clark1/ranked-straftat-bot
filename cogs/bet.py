@@ -5,6 +5,8 @@ import re
 import aiosqlite
 import random
 import string
+import os
+from dotenv import load_dotenv
 from itertools import combinations
 from helpers.model_helpers import predict_variable, predict_mp_total_rounds, predict_mp_player_rounds_all
 from helpers.bet_helpers import (
@@ -135,8 +137,8 @@ class Bet(commands.Cog):
 
             
             # COUNTDOWN SETUP
-            
-            seconds = 180
+
+            seconds = int(os.environ.get('BET_TIME_SECONDS', 300))
             minutes, secs = divmod(seconds, 60)
             bot_message = await ctx.send(
                 f"Bets for **{match_title}**\n"
