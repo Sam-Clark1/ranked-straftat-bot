@@ -3,6 +3,7 @@ from discord.ext import commands
 import aiosqlite
 import os
 from dotenv import load_dotenv
+from helpers.model_helpers import train_models, train_mp_models
 
 os.makedirs('models', exist_ok=True)
 
@@ -126,6 +127,12 @@ async def on_ready():
                 await bot.load_extension(f"cogs.{filename[:-3]}")
     except Exception as e:
         print(f"Failed to load cog: {e}")
+
+    if not os.path.exists('models/spread_model.ubj'):
+        await train_models('spread')
+    if not os.path.exists('models/mp_total_ratio_model.ubj') or \
+       not os.path.exists('models/mp_player_ratio_model.ubj'):
+        await train_mp_models()
 
     print(f'{bot.user} is online and ready!')
 
