@@ -50,11 +50,8 @@ class Help(commands.Cog):
    - Displays this help message.
    - Example: `!help`
 """
-        help_message = await ctx.send('**Available Commands**')
-
-        thread = await ctx.channel.create_thread(
-            name='Available Commands for Ranked Straftat Bot',
-            message=help_message
+        thread = await ctx.message.create_thread(
+            name='Available Commands for Ranked Straftat Bot'
         )
 
         await thread.send(help_message_str)
