@@ -106,8 +106,8 @@ class Bet(commands.Cog):
                 await ctx.send("Invalid input: Duplicate players are not allowed.")
                 return
 
-            if rounds_to_win < 1:
-                await ctx.send("Invalid input: rounds_to_win must be at least 1.")
+            if rounds_to_win > 50:
+                await ctx.send("Invalid input: rounds_to_win cannot exceed 50.")
                 return
 
 
@@ -117,6 +117,10 @@ class Bet(commands.Cog):
 
             if game_mode == '1v1' and rounds_to_win < 10:
                 await ctx.send("Invalid input: 1v1 bets require at least 10 rounds to win.")
+                return
+
+            if game_mode == 'mp' and rounds_to_win < 3:
+                await ctx.send("Invalid input: MP bets require at least 3 rounds to win.")
                 return
             match_title = f"[FT{rounds_to_win}] " + " vs ".join(
                 sorted(p.display_name for p in players)
@@ -359,7 +363,7 @@ class Bet(commands.Cog):
                             'self_bettable_ids': {p.id for p in players},
                         }
 
-                # Last place — 4+ players only; in-game players can bet others' last, not their own
+                # Last place — 4+ players only; in-game players cannot bet on last place
                 if len(players) >= 4:
                     for player in players:
                         bets_info[next_label()] = {
@@ -369,7 +373,7 @@ class Bet(commands.Cog):
                             'odds': await percentage_to_odds(last_probs[player.id] * 1.04),
                             'player_bet_on_id': player.id,
                             'player_b_id': None,
-                            'self_bettable_ids': {p.id for p in players if p.id != player.id},
+                            'self_bettable_ids': set(),
                         }
 
                 # O/U total rounds — in-game players may bet (no single player controls total)

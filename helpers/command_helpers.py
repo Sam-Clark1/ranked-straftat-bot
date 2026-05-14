@@ -167,9 +167,9 @@ async def match_to_db(player_rounds, rounds_to_win, db):
 
     # --- SP threshold table: expected_score → base SP for winner/1st ---
     SP_THRESHOLDS = [
-        (0.95, 110), (0.85, 120), (0.80, 140), (0.70, 160),
-        (0.65, 160), (0.60, 170), (0.55, 180), (0.50, 200),
-        (0.40, 200), (0.30, 200), (0.20, 200), (0.10, 200),
+        (0.95, 110), (0.85, 120), (0.80, 140), (0.70, 150),
+        (0.65, 200), (0.60, 250), (0.55, 275), (0.50, 300),
+        (0.40, 325), (0.30, 350), (0.20, 375), (0.10, 400),
     ]
 
     # --- SC threshold table: expected_score → (base SC, loser SC fraction) ---
@@ -184,7 +184,7 @@ async def match_to_db(player_rounds, rounds_to_win, db):
         for threshold, sp in SP_THRESHOLDS:
             if expected >= threshold:
                 return sp
-        return 250
+        return 500
 
     def _sc_lookup(expected):
         for threshold, sc, pct in SC_THRESHOLDS:
@@ -270,7 +270,7 @@ async def match_to_db(player_rounds, rounds_to_win, db):
 
     winner_rating_ref = ratings[pid_1st]
     elo_diff_pct      = loser_rating_ref / winner_rating_ref if winner_rating_ref > 0 else 1.0
-    loser_sp_full     = -int(max(5, winner_sp * 0.2 * elo_diff_pct))
+    loser_sp_full     = -int(max(5, winner_sp * 0.17 * elo_diff_pct))
 
     # --- Apply changes ---
     results = []
