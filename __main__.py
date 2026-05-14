@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from helpers.model_helpers import train_models, train_mp_models
 
 os.makedirs('models', exist_ok=True)
+os.makedirs('backups', exist_ok=True)
 
 intents = discord.Intents.default()
 intents.members = True
