@@ -1,7 +1,7 @@
 import asyncio
 import discord
 from discord.ext import commands
-from helpers.command_helpers import match_to_db, get_emoji
+from helpers.command_helpers import match_to_db, get_emoji, backup_db
 from helpers.bet_helpers import handle_bet_payouts
 from helpers.model_helpers import train_models, train_mp_models
 import aiosqlite
@@ -102,7 +102,8 @@ class Record(commands.Cog):
 
             
             # RECORD
-            
+
+            backup_db()
             try:
                 results = await match_to_db(
                     [(m.id, r) for m, r in player_rounds],

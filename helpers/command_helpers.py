@@ -1,5 +1,17 @@
 import math
+import os
+import shutil
+import glob
 from datetime import datetime
+
+
+def backup_db(max_backups=10):
+    os.makedirs('backups', exist_ok=True)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    shutil.copy2('rankings.db', f'backups/rankings_{timestamp}.db')
+    existing = sorted(glob.glob('backups/rankings_*.db'))
+    for old in existing[:-max_backups]:
+        os.remove(old)
 
 def chunk_message(text, max_len=1900):
     """Split text into chunks that fit within Discord's 2000-char message limit."""

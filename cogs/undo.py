@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 import aiosqlite
-from helpers.command_helpers import get_rank, get_sp
+from helpers.command_helpers import get_rank, get_sp, backup_db
 from dotenv import load_dotenv
 import os 
 
@@ -81,6 +81,8 @@ class Undo(commands.Cog):
                 hsp_col    = 'highest_sp_mp'
 
             
+            backup_db()
+
             # REVERSE EACH PARTICIPANT'S STATS
             
             for (player_id, placement, rounds_won,
