@@ -406,13 +406,7 @@ class Bet(commands.Cog):
                     else:
                         _ou_raw = rounds_to_win * win_probs[player.id] * len(players) * 0.6
 
-                    # Clamp lines too close to the extremes so they stay meaningful
-                    if _ou_raw >= rounds_to_win - 1:
-                        ou_line = rounds_to_win - 1.5
-                    elif _ou_raw <= 1:
-                        ou_line = 1.5
-                    else:
-                        ou_line = round(_ou_raw * 2) / 2 - 0.5
+                    ou_line = max(1.5, min(rounds_to_win - 1.5, round(_ou_raw * 2) / 2))
                     others = {p.id for p in players if p.id != player.id}
                     bets_info[next_label()] = {
                         'type': 'ou_player',
