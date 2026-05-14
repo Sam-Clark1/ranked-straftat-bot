@@ -270,7 +270,7 @@ async def match_to_db(player_rounds, rounds_to_win, db):
 
     winner_rating_ref = ratings[pid_1st]
     elo_diff_pct      = loser_rating_ref / winner_rating_ref if winner_rating_ref > 0 else 1.0
-    loser_sp_full     = -int(max(5, winner_sp * 0.35 * elo_diff_pct))
+    loser_sp_full     = -int(max(5, winner_sp * 0.2 * elo_diff_pct))
 
     # --- Apply changes ---
     results = []
