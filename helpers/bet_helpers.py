@@ -434,6 +434,7 @@ async def win_loss_determination(bets, match_id, spread, winner_id, total_rounds
     placements_map  = {pid: placement for pid, placement, _ in participants}
     rounds_map      = {pid: rw        for pid, _, rw       in participants}
     max_placement   = max(p for _, p, _ in participants) if participants else 1
+    last_place_tied = sum(1 for p in placements_map.values() if p == max_placement) > 1
 
     winning_bets = []
     losing_bets  = []
@@ -514,6 +515,8 @@ async def win_loss_determination(bets, match_id, spread, winner_id, total_rounds
         elif bet_type == 'last_place':
             place = placements_map.get(player_bet_on_id)
             if place is None:
+                await resolve('push')
+            elif place == max_placement and last_place_tied:
                 await resolve('push')
             elif place == max_placement:
                 await resolve('win')

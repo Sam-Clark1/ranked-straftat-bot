@@ -66,12 +66,16 @@ class Record(commands.Cog):
                 await ctx.send("Invalid input: Duplicate players are not allowed.")
                 return
 
-            if rounds_to_win < 1:
-                await ctx.send("Invalid input: rounds_to_win must be at least 1.")
+            if rounds_to_win > 50:
+                await ctx.send("Invalid input: rounds_to_win cannot exceed 50.")
                 return
 
             if len(player_rounds) == 2 and rounds_to_win < 10:
                 await ctx.send("Invalid input: 1v1 matches require at least 10 rounds to win.")
+                return
+
+            if len(player_rounds) > 2 and rounds_to_win < 3:
+                await ctx.send("Invalid input: MP matches require at least 3 rounds to win.")
                 return
 
             if any(r < 0 for _, r in player_rounds):

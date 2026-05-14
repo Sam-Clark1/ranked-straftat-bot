@@ -65,7 +65,7 @@ class Stats(commands.Cog):
         embed.add_field(
             name=f'1v1 · {rank_1v1} {emojis[0]}',
             value=(
-                f"SP: **{sp_1v1}** · Elo: {rating_1v1:.0f}\n"
+                f"SP: **{sp_1v1}**\n"
                 f"W/L: {wins_1v1}/{losses_1v1} ({win_pct_1v1:.1f}%)\n"
                 f"Rounds: {rounds_won_1v1}/{rounds_lost_1v1} ({round_pct_1v1:.1f}%)\n"
                 f"Peak: {highest_rank_1v1} {emojis[1]}"
@@ -76,7 +76,7 @@ class Stats(commands.Cog):
         embed.add_field(
             name=f'Multiplayer · {rank_mp} {emojis[2]}',
             value=(
-                f"SP: **{sp_mp}** · Elo: {rating_mp:.0f}\n"
+                f"SP: **{sp_mp}**\n"
                 f"1st/Other: {wins_mp}/{losses_mp} ({win_pct_mp:.1f}%)\n"
                 f"Rounds: {rounds_won_mp}/{rounds_lost_mp} ({round_pct_mp:.1f}%)\n"
                 f"Peak: {highest_rank_mp} {emojis[3]}"
