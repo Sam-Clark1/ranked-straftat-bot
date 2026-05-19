@@ -17,7 +17,7 @@ from helpers.bet_helpers import (
 )
 from helpers.command_helpers import (
     handle_inputted_players, get_emoji, get_players,
-    get_display_name, get_player_matches
+    get_display_name, get_player_matches, sc_fmt
 )
 
 def _add_vig(vig_range=(10, 15)):
@@ -443,7 +443,7 @@ class Bet(commands.Cog):
                 for user_id, straftcoins in available_balances:
                     embed.add_field(
                         name=await get_display_name(ctx, user_id),
-                        value=f"Straftcoins: {straftcoins}",
+                        value=f"Straftcoins: {sc_fmt(straftcoins)}",
                         inline=True
                     )
                 await thread.send(embed=embed)

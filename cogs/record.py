@@ -1,7 +1,7 @@
 import asyncio
 import discord
 from discord.ext import commands
-from helpers.command_helpers import match_to_db, get_emoji, backup_db
+from helpers.command_helpers import match_to_db, get_emoji, sc_fmt, backup_db
 from helpers.bet_helpers import handle_bet_payouts
 from helpers.model_helpers import train_models, train_mp_models
 import aiosqlite
@@ -131,7 +131,7 @@ class Record(commands.Cog):
             for r in results:
                 member  = member_lookup[r['player_id']]
                 sp_str  = f"+{r['sp_change']}"         if r['sp_change']         >= 0 else str(r['sp_change'])
-                sc_str  = f"+{r['straftcoin_change']}" if r['straftcoin_change'] >= 0 else str(r['straftcoin_change'])
+                sc_str  = f"+{sc_fmt(r['straftcoin_change'])}" if r['straftcoin_change'] >= 0 else f"-{sc_fmt(abs(r['straftcoin_change']))}"
                 icon    = f"#{r['placement']}"
 
                 embed.add_field(
@@ -139,7 +139,7 @@ class Record(commands.Cog):
                     value=(
                         f"SP: {sp_str} → **{r['new_sp']}**\n"
                         f"Rank: **{r['rank']}** {r['rank_emoji']}\n"
-                        f"Straftcoins: {sc_str} → **{r['new_straftcoins']}**{straftcoin_emoji[0]}"
+                        f"Straftcoins: {sc_str} → **{sc_fmt(r['new_straftcoins'])}**{straftcoin_emoji[0]}"
                     ),
                     inline=(game_mode == '1v1')
                 )

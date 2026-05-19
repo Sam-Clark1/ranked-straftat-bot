@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from io import BytesIO
 import math
-from helpers.command_helpers import get_straftcoin, get_emoji, get_display_name
+from helpers.command_helpers import get_straftcoin, get_emoji, get_display_name, sc_fmt
 
 
 # ODDS UTILITIES
@@ -246,7 +246,7 @@ async def handle_bet_placements(match_title, label, amount, bet_meta, thread, me
             await thread.send(embed=discord.Embed(
                 description=(
                     f"{message.author.mention} — insufficient Straftcoins! "
-                    f"You only have **{current_coins}** {sc_emoji}."
+                    f"You only have **{sc_fmt(current_coins)}** {sc_emoji}."
                 ),
                 color=discord.Color.red()
             ))
@@ -263,7 +263,7 @@ async def handle_bet_placements(match_title, label, amount, bet_meta, thread, me
         if amount > initial:
             await thread.send(embed=discord.Embed(
                 description=(
-                    f"{message.author.mention} — you start with **{initial}** {sc_emoji} "
+                    f"{message.author.mention} — you start with **{sc_fmt(initial)}** {sc_emoji} "
                     f"and can't bet more than that."
                 ),
                 color=discord.Color.red()
@@ -293,8 +293,8 @@ async def handle_bet_placements(match_title, label, amount, bet_meta, thread, me
         name='Bet Placed',
         value=(
             f'<@{user_id}>\n'
-            f'{bet_meta["display"]} | Odds: {_format_odds(bet_odds)} | Stake: {amount}{sc_emoji}\n'
-            f'To Win: {amount_to_win}{sc_emoji} | Balance: {new_balance} {sc_emoji}'
+            f'{bet_meta["display"]} | Odds: {_format_odds(bet_odds)} | Stake: {sc_fmt(amount)}{sc_emoji}\n'
+            f'To Win: {sc_fmt(amount_to_win)}{sc_emoji} | Balance: {sc_fmt(new_balance)} {sc_emoji}'
         ),
         inline=False
     )
@@ -335,7 +335,7 @@ async def handle_parlay_placement(match_title, leg_labels, stake, bets_info, thr
         await thread.send(embed=discord.Embed(
             description=(
                 f"{message.author.mention} — insufficient Straftcoins! "
-                f"You only have **{current_coins}** {sc_emoji}."
+                f"You only have **{sc_fmt(current_coins)}** {sc_emoji}."
             ),
             color=discord.Color.red()
         ))
@@ -395,9 +395,9 @@ async def handle_parlay_placement(match_title, leg_labels, stake, bets_info, thr
     embed.add_field(
         name=f'Parlay Placed ({len(leg_labels)} legs)',
         value=(
-            f'<@{user_id}> | Stake: {stake}{sc_emoji} | Odds: {_multiplier_to_american(multiplier)}\n'
+            f'<@{user_id}> | Stake: {sc_fmt(stake)}{sc_emoji} | Odds: {_multiplier_to_american(multiplier)}\n'
             f'{legs_text}\n'
-            f'To Win: {expected_win}{sc_emoji} | Balance: {current_coins - stake} {sc_emoji}'
+            f'To Win: {sc_fmt(expected_win)}{sc_emoji} | Balance: {sc_fmt(current_coins - stake)} {sc_emoji}'
         ),
         inline=False
     )
@@ -638,22 +638,22 @@ async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rou
                 fields.append((
                     f'🏆 Bet Won {pog}',
                     f'<@{user_id}>\n'
-                    f'Bet: {bet_type} (**{bet_value}**, {bet_amount}{sc}, {odds_str})\n'
-                    f'Amount Won: {amount_won}{sc} | Balance: {balance}{sc}'
+                    f'Bet: {bet_type} (**{bet_value}**, {sc_fmt(bet_amount)}{sc}, {odds_str})\n'
+                    f'Amount Won: {sc_fmt(amount_won)}{sc} | Balance: {sc_fmt(balance)}{sc}'
                 ))
             elif result == 'loss':
                 fields.append((
                     f'❌ Bet Lost {kek}',
                     f'<@{user_id}>\n'
-                    f'Bet: {bet_type} (**{bet_value}**, Stake: {bet_amount}{sc}, Odds: {odds_str})\n'
-                    f'Balance: {balance}{sc}'
+                    f'Bet: {bet_type} (**{bet_value}**, Stake: {sc_fmt(bet_amount)}{sc}, Odds: {odds_str})\n'
+                    f'Balance: {sc_fmt(balance)}{sc}'
                 ))
             elif result == 'push':
                 fields.append((
                     f'↩️ Bet Pushed',
                     f'<@{user_id}>\n'
-                    f'Bet: {bet_type} (**{bet_value}**, {bet_amount}{sc}, {odds_str})\n'
-                    f'Returned: {bet_amount}{sc} | Balance: {balance}{sc}'
+                    f'Bet: {bet_type} (**{bet_value}**, {sc_fmt(bet_amount)}{sc}, {odds_str})\n'
+                    f'Returned: {sc_fmt(bet_amount)}{sc} | Balance: {sc_fmt(balance)}{sc}'
                 ))
 
         for pid in parlay_ids:
@@ -684,16 +684,16 @@ async def handle_bet_payouts(match_id, match_title, winner_id, spread, total_rou
             if p_status == 'won':
                 fields.append((
                     f'🏆 Parlay Won {pog}',
-                    f'<@{p_user}> | Stake: {p_stake}{sc} | Odds: {_multiplier_to_american(p_mult)}\n'
+                    f'<@{p_user}> | Stake: {sc_fmt(p_stake)}{sc} | Odds: {_multiplier_to_american(p_mult)}\n'
                     f'{legs_str}\n'
-                    f'Amount Won: {p_payout}{sc} | Balance: {balance}{sc}'
+                    f'Amount Won: {sc_fmt(p_payout)}{sc} | Balance: {sc_fmt(balance)}{sc}'
                 ))
             else:
                 fields.append((
                     f'❌ Parlay Lost {kek}',
-                    f'<@{p_user}> | Stake: {p_stake}{sc}| Odds: {_multiplier_to_american(p_mult)}\n'
+                    f'<@{p_user}> | Stake: {sc_fmt(p_stake)}{sc}| Odds: {_multiplier_to_american(p_mult)}\n'
                     f'{legs_str}\n'
-                    f'Balance: {balance}{sc}'
+                    f'Balance: {sc_fmt(balance)}{sc}'
                 ))
 
         if not fields:

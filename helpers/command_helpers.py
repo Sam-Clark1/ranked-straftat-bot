@@ -13,6 +13,10 @@ def backup_db(max_backups=10):
     for old in existing[:-max_backups]:
         os.remove(old)
 
+def sc_fmt(amount):
+    return f"{int(amount):,}"
+
+
 def chunk_message(text, max_len=1900):
     """Split text into chunks that fit within Discord's 2000-char message limit."""
     chunks = []
@@ -274,6 +278,10 @@ async def match_to_db(player_rounds, rounds_to_win, db):
     base_sp      = _sp_lookup(exp_winner)
     sp_ratio     = base_sp // 4
     winner_sp    = int(max(5, base_sp + (winner_elo_diff / 7.5) + (winner_rnd_ratio * sp_ratio)))
+
+    if game_mode != '1v1':
+        mp_scale  = math.sqrt(len(placements) * rounds_to_win / 30)
+        winner_sp = max(5, int(winner_sp * mp_scale))
 
     base_sc, loser_sc_pct = _sc_lookup(exp_winner)
     sc_ratio     = base_sc // 4

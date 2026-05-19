@@ -3,7 +3,7 @@ from discord.ext import commands
 import aiosqlite
 from dotenv import load_dotenv
 import os
-from helpers.command_helpers import backup_db
+from helpers.command_helpers import backup_db, sc_fmt
 
 
 class UndoBets(commands.Cog):
@@ -62,7 +62,7 @@ class UndoBets(commands.Cog):
 
         embed = discord.Embed(
             title='Live Bets Cancelled',
-            description='\n'.join(f'<@{uid}> — +{amt} SC' for uid, amt in refunds.items()),
+            description='\n'.join(f'<@{uid}> — +{sc_fmt(amt)} SC' for uid, amt in refunds.items()),
             color=discord.Color(0x90ee90)
         )
         await ctx.send(embed=embed)
