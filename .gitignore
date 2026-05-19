@@ -10,3 +10,5 @@ rankings_OLD.db
 rankings_NEW.db
 backups/
 models/
+/tests/__pycache__
+.pytest_cache
