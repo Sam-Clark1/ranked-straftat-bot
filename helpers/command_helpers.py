@@ -13,6 +13,10 @@ def backup_db(max_backups=10):
     for old in existing[:-max_backups]:
         os.remove(old)
 
+def sc_fmt(amount):
+    return f"{int(amount):,}"
+
+
 def chunk_message(text, max_len=1900):
     """Split text into chunks that fit within Discord's 2000-char message limit."""
     chunks = []

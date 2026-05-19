@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 import aiosqlite
-from helpers.command_helpers import get_emoji, get_display_name
+from helpers.command_helpers import get_emoji, get_display_name, sc_fmt
 
 _PALE_GREEN = discord.Color(0x90ee90)
 
@@ -34,7 +34,7 @@ class StraftcoinLB(commands.Cog):
         for i, (user_id, straftcoins) in enumerate(rows, 1):
             username = await get_display_name(ctx, user_id)
             pos      = placement_emoji.get(i, f'{i}.')
-            line     = f"{pos} **{username}** — {straftcoins} {sc_emoji}\n"
+            line     = f"{pos} **{username}** — {sc_fmt(straftcoins)} {sc_emoji}\n"
 
             if len(desc) + len(line) > LIMIT:
                 current.description = desc

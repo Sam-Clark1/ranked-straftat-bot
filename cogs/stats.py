@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 import aiosqlite
-from helpers.command_helpers import get_emoji
+from helpers.command_helpers import get_emoji, sc_fmt
 
 _PALE_GREEN = discord.Color(0x90ee90)
 
@@ -86,7 +86,7 @@ class Stats(commands.Cog):
 
         embed.add_field(
             name='Straftcoins',
-            value=f'**{straftcoins}** {emojis[4]}',
+            value=f'**{sc_fmt(straftcoins)}** {emojis[4]}',
             inline=False
         )
 
