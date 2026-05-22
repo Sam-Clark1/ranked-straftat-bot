@@ -60,7 +60,7 @@ class Matchstats(commands.Cog):
             for opponent_id, (shared, wins, losses, rw, rl, _, _) in stats_1v1.items():
                 opponent_name = await get_display_name(ctx, opponent_id)
                 total_rounds  = rw + rl
-                win_pct   = wins / shared * 100   if shared > 0       else 0
+                win_pct   = wins / shared * 100       if shared > 0       else 0
                 round_pct = rw   / total_rounds * 100 if total_rounds > 0 else 0
 
                 if field_count >= 25:
@@ -72,7 +72,8 @@ class Matchstats(commands.Cog):
                     name=f'vs {opponent_name}',
                     value=(
                         f"**{wins}W — {losses}L** ({win_pct:.1f}%)\n"
-                        f"Rounds: {rw}–{rl} ({round_pct:.1f}%)"
+                        f"Rounds: {rw}–{rl} ({round_pct:.1f}%)\n"
+                        ' ———————————' 
                     ),
                     inline=True
                 )
@@ -93,7 +94,7 @@ class Matchstats(commands.Cog):
 
             for opponent_id, (shared, above, below, _, _, first_place, avg_diff) in stats_mp.items():
                 opponent_name = await get_display_name(ctx, opponent_id)
-                above_pct  = above / shared * 100      if shared > 0 else 0
+                above_pct  = above / shared * 100       if shared > 0 else 0
                 win_rate   = first_place / shared * 100 if shared > 0 else 0
                 diff_str   = f"+{avg_diff:.1f}" if avg_diff >= 0 else f"{avg_diff:.1f}"
 
@@ -108,7 +109,8 @@ class Matchstats(commands.Cog):
                         f"Final Placements:\n"
                         f"Above: {above} | Below: {below} ({above_pct:.1f}%)\n"
                         f"Avg placement diff: {diff_str}\n"
-                        f"Win rate: {win_rate:.1f}%"
+                        f"Win rate: {win_rate:.1f}%\n"
+                        ' ———————————'
                     ),
                     inline=True
                 )
