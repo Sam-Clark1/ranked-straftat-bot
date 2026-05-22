@@ -12,3 +12,4 @@ backups/
 models/
 /tests/__pycache__
 .pytest_cache
+.vscode/
