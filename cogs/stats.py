@@ -76,9 +76,9 @@ class Stats(commands.Cog):
         # Placement distribution string  e.g.  🥇 5  🥈 3  🥉 2  4th: 4
         place_parts = []
         for placement, cnt in placement_rows:
-            label = _PLACE_EMOJI.get(placement, f'{placement}th:')
-            place_parts.append(f'{label} {cnt}')
-        placement_str = '  '.join(place_parts) if place_parts else '—'
+            label = _PLACE_EMOJI.get(placement, f'{placement}th')
+            place_parts.append(f'{label}: {cnt}')
+        placement_str = ' | '.join(place_parts) if place_parts else '—'
 
         # Build embed 
         embed = discord.Embed(title=f'Stats — {player.display_name}', color=_PALE_GREEN)
