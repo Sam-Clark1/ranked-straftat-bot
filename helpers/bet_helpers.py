@@ -133,7 +133,7 @@ def _build_mp_section_image(bets_info, section_order):
         rows.append(('', section_title, '', True))
         section_bets = sections[type_key]
         if type_key in ('moneyline', 'podium', 'last_place'):
-            section_bets = sorted(section_bets, key=lambda x: x[1]['odds'], reverse=True)
+            section_bets = sorted(section_bets, key=lambda x: x[1]['odds'])
         elif type_key in ('head_to_head', 'ou_player'):
             section_bets = sorted(section_bets, key=lambda x: x[1]['display'])
         for lbl, meta in section_bets:
