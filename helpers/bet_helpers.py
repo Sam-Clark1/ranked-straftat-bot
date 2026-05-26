@@ -907,8 +907,11 @@ async def calculate_win_probability(score_a, score_b, scaling_factor=100):
 async def calculate_mp_win_probabilities(player_ids, db):
     """
     Estimates win probability for each player in an MP lobby.
-    Blends MP and 1v1 ratings weighted by MP games played,
-    then adjusts for MP win rate and round rate.
+    Blends MP and 1v1 ratings weighted by MP games played, then adjusts
+    for placement score (avg placement relative to field) and round rate.
+
+    placement_score replaces the old binary wins_mp/losses_mp win rate,
+    giving continuous credit for 2nd, 3rd, etc. — not just 1st place.
     """
     scores = {}
     for pid in player_ids:
@@ -925,17 +928,36 @@ async def calculate_mp_win_probabilities(player_ids, db):
             r1v1, rmp, w_mp, l_mp, rw_mp, rl_mp = 1000, 1000, 0, 0, 0, 0
 
         mp_games = w_mp + l_mp
-        # Scale MP weight 0→1 over first 20 MP games; use 1v1 as fallback
-        blend          = min(1.0, mp_games / 20)
+        # Scale MP weight 0→1 over first 3 MP games; use 1v1 as fallback
+        blend          = min(1.0, mp_games / 3)
         blended_rating = rmp * blend + r1v1 * (1 - blend)
 
-        # Small adjustments for MP-specific performance (±15% win rate, ±10% round rate)
-        mp_wr = w_mp / mp_games if mp_games > 0 else 0.5
+        # Placement score: query avg placement and avg field size from history
+        # 1st in n-player field = 1.0, last = 0.0, middle ≈ 0.5
+        async with db.execute("""
+            SELECT AVG(CAST(mp.placement AS REAL)), AVG(CAST(field.n AS REAL))
+            FROM match_participants mp
+            JOIN matches m ON mp.match_id = m.match_id
+            JOIN (
+                SELECT match_id, COUNT(*) AS n
+                FROM match_participants
+                GROUP BY match_id
+            ) field ON mp.match_id = field.match_id
+            WHERE mp.player_id = ? AND m.game_mode = 'mp'
+        """, (pid,)) as cur:
+            placement_row = await cur.fetchone()
+
+        if placement_row and placement_row[0] is not None:
+            avg_placement, avg_n = placement_row
+            placement_score = (avg_n + 1 - avg_placement) / avg_n
+        else:
+            placement_score = 0.5  # neutral fallback for players with no MP history
+
         mp_rr = rw_mp / (rw_mp + rl_mp) if (rw_mp + rl_mp) > 0 else 0.5
 
         scores[pid] = (
             math.exp(blended_rating / 400)
-            * (1.0 + 0.3 * (mp_wr - 0.5))
+            * (1.0 + 0.3 * (placement_score - 0.5))
             * (1.0 + 0.2 * (mp_rr - 0.5))
         )
 
