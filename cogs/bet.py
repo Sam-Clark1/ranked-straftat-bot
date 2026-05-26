@@ -31,10 +31,10 @@ def _relabel_bets_for_display(bets_info):
     so that the label sequence matches the visual order bettors see.
     """
     _DISPLAY_ORDER = [
-        ('moneyline',    lambda m: -m['odds']),    # best → worst odds
+        ('moneyline',    lambda m: m['odds']),     # most likely (-250) → least likely (+265)
         ('head_to_head', lambda m: m['display']),  # by player name
-        ('podium',       lambda m: -m['odds']),    # best → worst odds
-        ('last_place',   lambda m: -m['odds']),    # best → worst odds
+        ('podium',       lambda m: m['odds']),     # most likely → least likely
+        ('last_place',   lambda m: m['odds']),     # most likely → least likely
         ('ou_total',     None),                    # preserve insertion order
         ('ou_player',    lambda m: m['display']),  # by player name
     ]
