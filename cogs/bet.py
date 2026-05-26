@@ -308,13 +308,14 @@ class Bet(commands.Cog):
                     }
 
                 # Head-to-head pairings
-                # Cap at 6 for readability; prefer closest-odds matchups
+                # Cap controlled by MAX_H2H_PAIRS env var (default 6); prefer closest-odds matchups
+                max_h2h_pairs = int(os.environ.get('MAX_H2H_PAIRS', 6))
                 all_pairs = list(combinations(players, 2))
-                if len(all_pairs) > 6:
+                if len(all_pairs) > max_h2h_pairs:
                     all_pairs = sorted(
                         all_pairs,
                         key=lambda pair: abs(win_probs[pair[0].id] - win_probs[pair[1].id])
-                    )[:6]
+                    )[:max_h2h_pairs]
 
                 for pa, pb in all_pairs:
                     field_total = win_probs[pa.id] + win_probs[pb.id]

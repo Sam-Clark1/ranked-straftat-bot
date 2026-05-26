@@ -172,17 +172,15 @@ async def train_models(predicted_variable):
 # MP MODEL HELPERS
 
 def _pstats(players_df, pid):
-    """Return (rating_1v1, rating_mp, wr_1v1, wr_mp, rr_1v1, rr_mp) for a player."""
+    """Return (rating_mp, wr_mp, rr_mp) for a player."""
     if pid not in players_df.index:
-        return 1000.0, 1000.0, 0.5, 0.5, 0.5, 0.5
+        return 1000.0, 0.5, 0.5
     p = players_df.loc[pid]
     def _r(w, l): return w / (w + l) if (w + l) > 0 else 0.5
     return (
-        float(p['rating_1v1']), float(p['rating_mp']),
-        _r(p['wins_1v1'],       p['losses_1v1']),
-        _r(p['wins_mp'],        p['losses_mp']),
-        _r(p['rounds_won_1v1'], p['rounds_lost_1v1']),
-        _r(p['rounds_won_mp'],  p['rounds_lost_mp']),
+        float(p['rating_mp']),
+        _r(p['wins_mp'],       p['losses_mp']),
+        _r(p['rounds_won_mp'], p['rounds_lost_mp']),
     )
 
 
@@ -217,12 +215,9 @@ async def prepare_mp_total_features(matches_df, player_rows, players_df):
         if not pids:
             continue
         stats = [_pstats(ps, pid) for pid in pids]
-        r1v1, rmp, wr1, wrm, rr1, rrm = zip(*stats)
+        rmp, wrm, rrm = zip(*stats)
         rows.append({
             'num_players':        m['num_players'],
-            'avg_rating_1v1':     sum(r1v1) / len(r1v1),
-            'avg_win_rate_1v1':   sum(wr1)  / len(wr1),
-            'avg_round_rate_1v1': sum(rr1)  / len(rr1),
             'avg_rating_mp':      sum(rmp)  / len(rmp),
             'std_rating_mp':      pd.Series(list(rmp)).std(ddof=0),
             'avg_win_rate_mp':    sum(wrm)  / len(wrm),
@@ -235,8 +230,7 @@ async def prepare_mp_total_features(matches_df, player_rows, players_df):
         return df, pd.Series(dtype=float)
     features = [
         'num_players',
-        'avg_rating_1v1', 'avg_win_rate_1v1', 'avg_round_rate_1v1',
-        'avg_rating_mp',  'std_rating_mp',    'avg_win_rate_mp', 'avg_round_rate_mp',
+        'avg_rating_mp', 'std_rating_mp', 'avg_win_rate_mp', 'avg_round_rate_mp',
     ]
     return df[features], df['total_rounds_ratio']
 
@@ -247,25 +241,19 @@ async def prepare_mp_player_features(player_rows, players_df):
     for mid, grp in player_rows.groupby('match_id'):
         pids      = grp['player_id'].tolist()
         all_stats = [_pstats(ps, pid) for pid in pids]
-        r1v1, rmp, wr1, wrm, rr1, rrm = zip(*all_stats)
-        fa_r1v1, fa_rmp = sum(r1v1)/len(r1v1), sum(rmp)/len(rmp)
-        fa_wr1,  fa_wrm = sum(wr1) /len(wr1),  sum(wrm)/len(wrm)
-        fa_rr1,  fa_rrm = sum(rr1) /len(rr1),  sum(rrm)/len(rrm)
+        rmp, wrm, rrm = zip(*all_stats)
+        fa_rmp = sum(rmp) / len(rmp)
+        fa_wrm = sum(wrm) / len(wrm)
+        fa_rrm = sum(rrm) / len(rrm)
         rounds_to_win   = grp['rounds_to_win'].iloc[0]
         for _, row in grp.iterrows():
-            pr1, prm, pw1, pwm, prr1, prrm = _pstats(ps, row['player_id'])
+            prm, pwm, prrm = _pstats(ps, row['player_id'])
             rows.append({
-                'player_rating_1v1':       pr1,
                 'player_rating_mp':        prm,
-                'rating_vs_field_1v1':     pr1  - fa_r1v1,
                 'rating_vs_field_mp':      prm  - fa_rmp,
-                'player_win_rate_1v1':     pw1,
                 'player_win_rate_mp':      pwm,
-                'win_rate_vs_field_1v1':   pw1  - fa_wr1,
                 'win_rate_vs_field_mp':    pwm  - fa_wrm,
-                'player_round_rate_1v1':   prr1,
                 'player_round_rate_mp':    prrm,
-                'round_rate_vs_field_1v1': prr1 - fa_rr1,
                 'round_rate_vs_field_mp':  prrm - fa_rrm,
                 'num_players':             len(pids),
                 # Target: ratio so predictions scale correctly with rounds_to_win
@@ -275,12 +263,12 @@ async def prepare_mp_player_features(player_rows, players_df):
     if df.empty:
         return df, pd.Series(dtype=float)
     features = [
-        'player_rating_1v1', 'player_rating_mp',
-        'rating_vs_field_1v1', 'rating_vs_field_mp',
-        'player_win_rate_1v1', 'player_win_rate_mp',
-        'win_rate_vs_field_1v1', 'win_rate_vs_field_mp',
-        'player_round_rate_1v1', 'player_round_rate_mp',
-        'round_rate_vs_field_1v1', 'round_rate_vs_field_mp',
+        'player_rating_mp',
+        'rating_vs_field_mp',
+        'player_win_rate_mp',
+        'win_rate_vs_field_mp',
+        'player_round_rate_mp',
+        'round_rate_vs_field_mp',
         'num_players',
     ]
     return df[features], df['rounds_ratio']
@@ -311,13 +299,13 @@ async def train_mp_models():
 
 
 def _build_field_features(ps, player_ids):
-    """Compute field-average stats from a list of player IDs."""
+    """Compute field-average MP stats from a list of player IDs."""
     all_stats = [_pstats(ps, pid) for pid in player_ids]
-    r1v1, rmp, wr1, wrm, rr1, rrm = zip(*all_stats)
+    rmp, wrm, rrm = zip(*all_stats)
     return {
-        'fa_r1v1': sum(r1v1)/len(r1v1), 'fa_rmp': sum(rmp)/len(rmp),
-        'fa_wr1':  sum(wr1) /len(wr1),  'fa_wrm': sum(wrm)/len(wrm),
-        'fa_rr1':  sum(rr1) /len(rr1),  'fa_rrm': sum(rrm)/len(rrm),
+        'fa_rmp':  sum(rmp) / len(rmp),
+        'fa_wrm':  sum(wrm) / len(wrm),
+        'fa_rrm':  sum(rrm) / len(rrm),
         'std_rmp': pd.Series(list(rmp)).std(ddof=0),
     }
 
@@ -331,9 +319,6 @@ async def predict_mp_total_rounds(player_ids, rounds_to_win, db):
     fld = _build_field_features(ps, player_ids)
     features = pd.DataFrame([{
         'num_players':        len(player_ids),
-        'avg_rating_1v1':     fld['fa_r1v1'],
-        'avg_win_rate_1v1':   fld['fa_wr1'],
-        'avg_round_rate_1v1': fld['fa_rr1'],
         'avg_rating_mp':      fld['fa_rmp'],
         'std_rating_mp':      fld['std_rmp'],
         'avg_win_rate_mp':    fld['fa_wrm'],
@@ -354,19 +339,13 @@ async def predict_mp_player_rounds_all(player_ids, rounds_to_win, db):
     fld = _build_field_features(ps, player_ids)
     feature_rows = []
     for pid in player_ids:
-        pr1, prm, pw1, pwm, prr1, prrm = _pstats(ps, pid)
+        prm, pwm, prrm = _pstats(ps, pid)
         feature_rows.append({
-            'player_rating_1v1':       pr1,
             'player_rating_mp':        prm,
-            'rating_vs_field_1v1':     pr1  - fld['fa_r1v1'],
             'rating_vs_field_mp':      prm  - fld['fa_rmp'],
-            'player_win_rate_1v1':     pw1,
             'player_win_rate_mp':      pwm,
-            'win_rate_vs_field_1v1':   pw1  - fld['fa_wr1'],
             'win_rate_vs_field_mp':    pwm  - fld['fa_wrm'],
-            'player_round_rate_1v1':   prr1,
             'player_round_rate_mp':    prrm,
-            'round_rate_vs_field_1v1': prr1 - fld['fa_rr1'],
             'round_rate_vs_field_mp':  prrm - fld['fa_rrm'],
             'num_players':             len(player_ids),
         })
