@@ -479,8 +479,8 @@ async def win_loss_determination(bets, match_id, spread, winner_id, total_rounds
                 else:
                     await resolve('loss')
             else:
-                # Underdog covers if they won OR margin < line
-                if player_bet_on_id != winner_id or spread < line:
+                # Underdog covers if they won outright OR lost by less than the line
+                if player_bet_on_id == winner_id or spread < line:
                     await resolve('win')
                 elif spread == line:
                     await resolve('push')
