@@ -1,8 +1,8 @@
 import asyncio
 import discord
 from discord.ext import commands
-from helpers.command_helpers import match_to_db, get_emoji, sc_fmt, backup_db
-from helpers.bet_helpers import handle_bet_payouts
+from helpers.command_helpers import match_to_db, get_emoji, sc_fmt, backup_db, get_straftcoin
+from helpers.bet_helpers import handle_bet_payouts, handle_wager_payouts
 from helpers.model_helpers import train_models, train_mp_models
 import aiosqlite
 
@@ -168,15 +168,62 @@ class Record(commands.Cog):
                 db
             )
 
+            settlement_thread = None
+
             if bet_settlements_message:
                 embeds, mentions = bet_settlements_message
                 winner_member = member_lookup[winner['player_id']]
-                thread = await ctx.channel.create_thread(
+                settlement_thread = await ctx.channel.create_thread(
                     name=f"Resolved Bets — {winner_member.display_name}'s match",
                     message=message
                 )
                 for i, embed in enumerate(embeds):
-                    await thread.send(content=mentions if i == 0 else None, embed=embed)
+                    await settlement_thread.send(content=mentions if i == 0 else None, embed=embed)
+
+
+            # WAGER PAYOUTS (1v1 only)
+
+            if results[0]['game_mode'] == '1v1':
+                wager_results = await handle_wager_payouts(participant_ids, winner['player_id'], db)
+                if wager_results:
+                    await db.commit()
+                    # Reuse the bet settlement thread if it exists, otherwise open a new one
+                    if settlement_thread is None:
+                        winner_member = member_lookup[winner['player_id']]
+                        settlement_thread = await ctx.channel.create_thread(
+                            name=f"Resolved Bets — {winner_member.display_name}'s match",
+                            message=message
+                        )
+                    for wr in wager_results:
+                        winner_sc      = await get_straftcoin(db, wr['winner_id'])
+                        loser_sc       = await get_straftcoin(db, wr['loser_id'])
+                        winner_mention = f"<@{wr['winner_id']}>"
+                        loser_mention  = f"<@{wr['loser_id']}>"
+                        winner_wagered = (
+                            wr['player_a_amount']
+                            if wr['winner_id'] == wr['player_a_id']
+                            else wr['player_b_amount']
+                        )
+                        loser_wagered = (
+                            wr['player_b_amount']
+                            if wr['winner_id'] == wr['player_a_id']
+                            else wr['player_a_amount']
+                        )
+                        wager_embed = discord.Embed(
+                            title="⚔️ Wager Settled",
+                            description=(
+                                f"🏆 {winner_mention} wins **{sc_fmt(wr['pot'])} SC**!\n\n"
+                                f"{winner_mention} wagered {sc_fmt(winner_wagered)} SC"
+                                f" · balance now **{sc_fmt(winner_sc)} SC**\n"
+                                f"{loser_mention} wagered {sc_fmt(loser_wagered)} SC"
+                                f" · balance now **{sc_fmt(loser_sc)} SC**"
+                            ),
+                            color=discord.Color(0x90ee90)
+                        )
+                        await settlement_thread.send(
+                            content=f"{winner_mention} {loser_mention}",
+                            embed=wager_embed
+                        )
 
             if results[0]['game_mode'] == '1v1':
                 asyncio.create_task(train_models('spread'))
