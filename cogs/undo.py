@@ -226,9 +226,47 @@ class Undo(commands.Cog):
                         "DELETE FROM past_bets WHERE bet_id = ?", (bet_id,)
                     )
 
-            
+
+            # REVERSE WAGER (1v1 only — take the most recently settled wager between these players)
+
+            if game_mode == '1v1':
+                player_ids = [p[0] for p in participants]
+                p1, p2 = player_ids[0], player_ids[1]
+
+                async with db.execute("""
+                    SELECT wager_id, player_a_id, player_b_id,
+                           player_a_amount, player_b_amount, status
+                    FROM wagers
+                    WHERE status IN ('won_a', 'won_b')
+                      AND (
+                        (player_a_id = ? AND player_b_id = ?) OR
+                        (player_a_id = ? AND player_b_id = ?)
+                      )
+                    ORDER BY wager_id DESC
+                    LIMIT 1
+                """, (p1, p2, p2, p1)) as cursor:
+                    settled_wager = await cursor.fetchone()
+
+                if settled_wager:
+                    wager_id, a_id, b_id, a_amt, b_amt, w_status = settled_wager
+                    winner_id = a_id if w_status == 'won_a' else b_id
+                    pot = a_amt + b_amt
+
+                    # Claw back the pot from whoever received it at settlement
+                    await db.execute(
+                        "UPDATE players SET straftcoins = MAX(0, straftcoins - ?) "
+                        "WHERE user_id = ?",
+                        (pot, winner_id)
+                    )
+                    # Restore status to active so it re-settles on re-record
+                    await db.execute(
+                        "UPDATE wagers SET status = 'active' WHERE wager_id = ?",
+                        (wager_id,)
+                    )
+
+
             # DELETE MATCH RECORDS
-            
+
             await db.execute(
                 "DELETE FROM match_participants WHERE match_id = ?", (match_id,)
             )
