@@ -993,3 +993,54 @@ async def get_mp_h2h_rate(player_a_id, player_b_id, db):
     if not row or row[1] < 3:
         return None
     return row[0] / row[1]
+
+
+async def handle_wager_payouts(player_ids: list, winner_id: int, db) -> list:
+    """
+    Resolve any active wager between the two 1v1 players.
+    Credits the winner with the full pot (both stakes combined).
+    Returns a list of result dicts for display; empty list if no active wager found.
+    """
+    p1, p2 = player_ids[0], player_ids[1]
+    async with db.execute("""
+        SELECT wager_id, player_a_id, player_b_id, player_a_amount, player_b_amount
+        FROM wagers
+        WHERE status = 'active'
+          AND (
+            (player_a_id = ? AND player_b_id = ?) OR
+            (player_a_id = ? AND player_b_id = ?)
+          )
+    """, (p1, p2, p2, p1)) as cur:
+        rows = await cur.fetchall()
+
+    results = []
+    for wager_id, a_id, b_id, a_amt, b_amt in rows:
+        pot = a_amt + b_amt
+        if winner_id == a_id:
+            wager_winner_id = a_id
+            loser_id        = b_id
+            new_status      = 'won_a'
+        else:
+            wager_winner_id = b_id
+            loser_id        = a_id
+            new_status      = 'won_b'
+
+        await db.execute(
+            "UPDATE players SET straftcoins = straftcoins + ? WHERE user_id = ?",
+            (pot, wager_winner_id)
+        )
+        await db.execute(
+            "UPDATE wagers SET status = ? WHERE wager_id = ?",
+            (new_status, wager_id)
+        )
+        results.append({
+            'player_a_id':    a_id,
+            'player_b_id':    b_id,
+            'player_a_amount': a_amt,
+            'player_b_amount': b_amt,
+            'winner_id':      wager_winner_id,
+            'loser_id':       loser_id,
+            'pot':            pot,
+        })
+
+    return results

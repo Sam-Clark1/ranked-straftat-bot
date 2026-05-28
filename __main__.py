@@ -118,6 +118,20 @@ async def on_ready():
         )
         """)
 
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS wagers (
+            wager_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_a_id     INTEGER NOT NULL,
+            player_b_id     INTEGER NOT NULL,
+            player_a_amount INTEGER NOT NULL,
+            player_b_amount INTEGER NOT NULL,
+            status          TEXT NOT NULL DEFAULT 'active',
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (player_a_id) REFERENCES players(user_id),
+            FOREIGN KEY (player_b_id) REFERENCES players(user_id)
+        )
+        """)
+
         await db.commit()
 
     try:
