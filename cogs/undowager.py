@@ -48,7 +48,7 @@ class UndoWager(commands.Cog):
 
         embed = discord.Embed(
             title='Active Wagers Cancelled',
-            description='\n'.join(f'<@{uid}> — +{sc_fmt(amt)} SC' for uid, amt in refunds.items()),
+            description='\n'.join(f'<@{uid}> - +{sc_fmt(amt)} SC' for uid, amt in refunds.items()),
             color=discord.Color(0x90ee90)
         )
         await ctx.send(embed=embed)

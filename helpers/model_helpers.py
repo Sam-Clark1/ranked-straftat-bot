@@ -153,7 +153,7 @@ async def train_models(predicted_variable):
     # Need enough samples to split into train and test sets.
     # Below this threshold the model wouldn't be meaningful anyway.
     if len(X) < 5:
-        print(f"Skipping model training — only {len(X)} sample(s) available, need at least 5.")
+        print(f"Skipping model training - only {len(X)} sample(s) available, need at least 5.")
         return
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -286,7 +286,7 @@ async def train_mp_models():
             .save_model('models/mp_total_ratio_model.ubj')
         print(f"MP total rounds model trained on {len(X_t)} matches.")
     else:
-        print(f"Skipping MP total rounds training — {len(X_t)} sample(s), need at least 5.")
+        print(f"Skipping MP total rounds training - {len(X_t)} sample(s), need at least 5.")
 
     X_p, y_p = await prepare_mp_player_features(player_rows, players_df)
     if len(X_p) >= 5:
@@ -295,7 +295,7 @@ async def train_mp_models():
             .save_model('models/mp_player_ratio_model.ubj')
         print(f"MP player rounds model trained on {len(X_p)} player-match rows.")
     else:
-        print(f"Skipping MP player rounds training — {len(X_p)} sample(s), need at least 5.")
+        print(f"Skipping MP player rounds training - {len(X_p)} sample(s), need at least 5.")
 
 
 def _build_field_features(ps, player_ids):
@@ -330,9 +330,17 @@ async def predict_mp_total_rounds(player_ids, rounds_to_win, db):
     return ratio * rounds_to_win
 
 
+_MP_PLAYER_MODEL_MIN_GAMES = 5  # games needed before model beats the formula
+
 async def predict_mp_player_rounds_all(player_ids, rounds_to_win, db):
-    """Returns {player_id: predicted_rounds} for all players, or {} if model not trained."""
+    """Returns {player_id: predicted_rounds} for all players, or {} if model not trained
+    or if there are fewer than _MP_PLAYER_MODEL_MIN_GAMES MP games recorded."""
     if not os.path.exists('models/mp_player_ratio_model.ubj'):
+        return {}
+    row = await db.execute_fetchall(
+        "SELECT COUNT(*) FROM matches WHERE game_mode = 'mp'"
+    )
+    if row[0][0] < _MP_PLAYER_MODEL_MIN_GAMES:
         return {}
     players_raw = await db.execute_fetchall("SELECT * FROM players")
     ps  = pd.DataFrame(players_raw, columns=_PLAYERS_COLUMNS).set_index('user_id')

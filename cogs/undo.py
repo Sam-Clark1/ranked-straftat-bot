@@ -227,7 +227,7 @@ class Undo(commands.Cog):
                     )
 
 
-            # REVERSE WAGER (1v1 only — take the most recently settled wager between these players)
+            # REVERSE WAGER (1v1 only - take the most recently settled wager between these players)
 
             if game_mode == '1v1':
                 player_ids = [p[0] for p in participants]

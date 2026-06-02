@@ -36,8 +36,8 @@ class Help(commands.Cog):
 6. **!bet <rounds_to_win> <@Player1> <@Player2> ...**
    - Opens a 2-minute betting window for an upcoming match.
    - Generates odds for Moneyline, Spread (1v1), Head-to-Head, Podium, Last Place, and O/U bets based on player count.
-   - **Single bet**: type the bet label and stake — e.g. `A 100`
-   - **Parlay**: type P, the labels, then the stake — e.g. `P A C 100`
+   - **Single bet**: type the bet label and stake - e.g. `A 100`
+   - **Parlay**: type P, the labels, then the stake - e.g. `P A C 100`
    - Players in the match can only bet on their own positive outcomes.
    - Everyone starts with 1000 {emojis[0]} if they have no account.
    - Example: `!bet 10 @Player1 @Player2`

@@ -9,9 +9,9 @@ A Discord bot for running a competitive ranked ladder in [Straftat](https://stor
 ### Match Recording
 - Records 1v1 and multiplayer (up to 10 players) results with `!record`
 - Each match updates per-player:
-  - **ELO rating** — pairwise, K=100, with round-margin adjustment
-  - **Skill Points (SP)** — threshold-based, scaled by opponent strength and round performance
-  - **Straftcoin balance** — performance-scaled virtual currency rewards
+  - **ELO rating** - pairwise, K=100, with round-margin adjustment
+  - **Skill Points (SP)** - threshold-based, scaled by opponent strength and round performance
+  - **Straftcoin balance** - performance-scaled virtual currency rewards
   - Win/loss record and round statistics
 - Separate 1v1 and multiplayer rating tracks
 - rounds_to_win limits: 1v1 min 10 / max 50 · MP min 3 / max 50
@@ -29,7 +29,7 @@ A Discord bot for running a competitive ranked ladder in [Straftat](https://stor
 - **MP bet types**: Moneyline, Head-to-Head, Podium (top 3), Last Place, Over/Under total rounds, Over/Under per-player rounds
 - **Parlays**: combine up to 6 legs across bet types; multiplier shown in American odds
 - Conflict detection prevents contradictory parlay combinations (e.g. favourite spread + underdog moneyline, H2H cycles)
-- Players in a match have betting restrictions — can only bet on their own positive outcomes; cannot bet on Last Place bets at all
+- Players in a match have betting restrictions - can only bet on their own positive outcomes; cannot bet on Last Place bets at all
 - Tied last place finish → all Last Place bets on those players push (stake refunded)
 - Bets settle automatically when the match is recorded; results posted in a thread with full leg breakdown for parlays
 
@@ -41,11 +41,11 @@ A Discord bot for running a competitive ranked ladder in [Straftat](https://stor
 - Predictions feed into odds generation, adjusted by recent win rates and round rates
 
 ### Player Stats & Leaderboards
-- `!stats` — per-player 1v1 and MP stats: rating, SP, rank, win %, round stats, Straftcoin balance
-- `!matchstats` — head-to-head breakdown vs. each opponent
-- `!lb` — 1v1 SP leaderboard
-- `!mlb` — multiplayer SP leaderboard
-- `!slb` — Straftcoin balance leaderboard
+- `!stats` - per-player 1v1 and MP stats: rating, SP, rank, win %, round stats, Straftcoin balance
+- `!matchstats` - head-to-head breakdown vs. each opponent
+- `!lb` - 1v1 SP leaderboard
+- `!mlb` - multiplayer SP leaderboard
+- `!slb` - Straftcoin balance leaderboard
 - All Straftcoin amounts displayed with comma formatting (e.g. 1,250,000)
 
 ### Database Backups
@@ -54,8 +54,8 @@ A Discord bot for running a competitive ranked ladder in [Straftat](https://stor
 - Backups stored in `backups/` (gitignored)
 
 ### Admin Tools
-- `!undo` — reverts the most recent match, restoring all stats, ratings, and bet states
-- `!undobets` — cancels all live bets and refunds stakes to every bettor
+- `!undo` - reverts the most recent match, restoring all stats, ratings, and bet states
+- `!undobets` - cancels all live bets and refunds stakes to every bettor
 
 ---
 
@@ -120,8 +120,8 @@ ADMIN_ID=your_discord_user_id_here
 BET_TIME_SECONDS=300
 ```
 
-- `ADMIN_ID` — Discord user ID authorised to use `!undo` and `!undobets`
-- `BET_TIME_SECONDS` — betting window duration in seconds (default: 300 = 5 minutes)
+- `ADMIN_ID` - Discord user ID authorised to use `!undo` and `!undobets`
+- `BET_TIME_SECONDS` - betting window duration in seconds (default: 300 = 5 minutes)
 
 ---
 
@@ -154,8 +154,8 @@ The bot creates the SQLite database and all tables on first launch, creates the 
 
 Inside a `!bet` thread, after the odds image is posted:
 
-- **Single bet**: `<label> <stake>` — e.g. `A 200`
-- **Parlay**: `P <label1> <label2> ... <stake>` — e.g. `P A C 200`
+- **Single bet**: `<label> <stake>` - e.g. `A 200`
+- **Parlay**: `P <label1> <label2> ... <stake>` - e.g. `P A C 200`
 
 All bets are placed in Straftcoin. New players start with 1,000 SC.
 

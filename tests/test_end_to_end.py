@@ -74,7 +74,7 @@ async def test_1v1_moneyline_bet_win(db):
 async def test_1v1_spread_bet_loss(db):
     await _seed(db, P1, P2, BETTOR)
     title = "[FT10] P1 vs P2"
-    # Bet favourite (-3.5) but actual spread = 2 — doesn't cover
+    # Bet favourite (-3.5) but actual spread = 2 - doesn't cover
     await _place_bet(db, title, 'spread', '-3.5', odds=-110, player_a=P1)
 
     results = await match_to_db([(P1, 10), (P2, 8)], rounds_to_win=10, db=db)
@@ -127,7 +127,7 @@ async def test_mp_last_place_tied_push(db):
     assert await _past_bet_result(db) == 'push'
     assert await _bettor_balance(db) == 5000  # stake returned
 
-# ── Parlay — both legs win ────────────────────────────────────────────────────
+# ── Parlay - both legs win ────────────────────────────────────────────────────
 
 async def test_parlay_both_legs_win(db):
     await _seed(db, P1, P2, BETTOR)
@@ -170,7 +170,7 @@ async def test_parlay_both_legs_win(db):
     assert row[1] == payout
     assert await _bettor_balance(db) == 5000 - STAKE + payout
 
-# ── Parlay — one leg loses ────────────────────────────────────────────────────
+# ── Parlay - one leg loses ────────────────────────────────────────────────────
 
 async def test_parlay_one_leg_loses(db):
     await _seed(db, P1, P2, BETTOR)
@@ -188,7 +188,7 @@ async def test_parlay_one_leg_loses(db):
 
     for bet_type, bet_value, odds, player_a in [
         ('moneyline', 'P1 wins', ml_odds, P1),
-        ('ou_total',  'U16.5',   ou_odds, None),  # Under — will lose (total=17)
+        ('ou_total',  'U16.5',   ou_odds, None),  # Under - will lose (total=17)
     ]:
         await db.execute(
             "INSERT INTO live_bets "

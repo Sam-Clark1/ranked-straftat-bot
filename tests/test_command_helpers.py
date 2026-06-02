@@ -38,7 +38,7 @@ async def test_get_rank_boundary():
     assert rank_below == "Shitterton I"
     assert rank_at    == "Bronze IV"
 
-# ── match_to_db — 1v1 ────────────────────────────────────────────────────────
+# ── match_to_db - 1v1 ────────────────────────────────────────────────────────
 
 P1, P2, P3, P4 = 1, 2, 3, 4
 
@@ -94,7 +94,7 @@ async def test_1v1_winner_is_placement_1(db):
     winner = next(r for r in results if r['placement'] == 1)
     assert winner['player_id'] == P2
 
-# ── match_to_db — MP ─────────────────────────────────────────────────────────
+# ── match_to_db - MP ─────────────────────────────────────────────────────────
 
 async def test_mp_top_half_gain_sp_bottom_half_lose(db):
     await _seed_players(db, P1, P2, P3, P4)
