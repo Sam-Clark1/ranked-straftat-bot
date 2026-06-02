@@ -8,7 +8,7 @@ import string
 import os
 from dotenv import load_dotenv
 from itertools import combinations
-from helpers.model_helpers import predict_variable, predict_mp_total_rounds, predict_mp_player_rounds_all
+from helpers.model_helpers import predict_variable, predict_mp_total_rounds
 from helpers.bet_helpers import (
     check_match_titles, handle_bet_placements, handle_parlay_placement,
     create_odds_display, percentage_to_odds, calc_performance_score,
@@ -228,7 +228,7 @@ class Bet(commands.Cog):
 
                 ou_total_line = round((rounds_to_win * 2) - predicted_spread - 0.5, 1)
 
-                # A: Spread — favorite
+                # A: Spread - favorite
                 bets_info[next_label()] = {
                     'type': 'spread',
                     'display': f"{fav.display_name} Spread",
@@ -238,7 +238,7 @@ class Bet(commands.Cog):
                     'player_b_id': None,
                     'self_bettable_ids': {fav.id},
                 }
-                # B: Moneyline — favorite
+                # B: Moneyline - favorite
                 bets_info[next_label()] = {
                     'type': 'moneyline',
                     'display': f"{fav.display_name} ML",
@@ -248,7 +248,7 @@ class Bet(commands.Cog):
                     'player_b_id': None,
                     'self_bettable_ids': {fav.id},
                 }
-                # C: O/U total rounds — over
+                # C: O/U total rounds - over
                 bets_info[next_label()] = {
                     'type': 'ou_total',
                     'display': 'O/U Total Rounds',
@@ -258,7 +258,7 @@ class Bet(commands.Cog):
                     'player_b_id': None,
                     'self_bettable_ids': set(),
                 }
-                # D: Spread — underdog
+                # D: Spread - underdog
                 bets_info[next_label()] = {
                     'type': 'spread',
                     'display': f"{dog.display_name} Spread",
@@ -268,7 +268,7 @@ class Bet(commands.Cog):
                     'player_b_id': None,
                     'self_bettable_ids': {dog.id},
                 }
-                # E: Moneyline — underdog
+                # E: Moneyline - underdog
                 bets_info[next_label()] = {
                     'type': 'moneyline',
                     'display': f"{dog.display_name} ML",
@@ -278,7 +278,7 @@ class Bet(commands.Cog):
                     'player_b_id': None,
                     'self_bettable_ids': {dog.id},
                 }
-                # F: O/U total rounds — under
+                # F: O/U total rounds - under
                 bets_info[next_label()] = {
                     'type': 'ou_total',
                     'display': 'O/U Total Rounds',
@@ -347,7 +347,7 @@ class Bet(commands.Cog):
                         'self_bettable_ids': {p.id for p in players if p.id != pa.id},
                     }
 
-                # Podium (top 3) — 4+ players only
+                # Podium (top 3) - 4+ players only
                 # Derived from last-place probability: P(top 3) = 1 - P(last) × (n - 3)
                 if len(players) >= 4:
                     for player in players:
@@ -364,7 +364,7 @@ class Bet(commands.Cog):
                             'self_bettable_ids': {p.id for p in players},
                         }
 
-                # Last place — 4+ players only; in-game players cannot bet on last place
+                # Last place - 4+ players only; in-game players cannot bet on last place
                 if len(players) >= 4:
                     for player in players:
                         bets_info[next_label()] = {
@@ -377,14 +377,13 @@ class Bet(commands.Cog):
                             'self_bettable_ids': set(),
                         }
 
-                # O/U total rounds — in-game players may bet (no single player controls total)
+                # O/U total rounds - in-game players may bet (no single player controls total)
                 all_player_ids = {p.id for p in players}
 
                 _ou_total_pred = await predict_mp_total_rounds(player_ids, rounds_to_win, db)
                 _ou_total_raw  = _ou_total_pred if _ou_total_pred is not None else rounds_to_win * len(players) * 0.55
                 ou_total_line  = round(_ou_total_raw * 2) / 2
 
-                _ou_player_preds = await predict_mp_player_rounds_all(player_ids, rounds_to_win, db)
                 bets_info[next_label()] = {
                     'type': 'ou_total',
                     'display': 'O/U Total Rounds',
@@ -404,14 +403,15 @@ class Bet(commands.Cog):
                     'self_bettable_ids': all_player_ids,
                 }
 
-                # O/U per-player rounds — in-game players may NOT bet their own rounds
-                for player in players:
-                    if player.id in _ou_player_preds:
-                        _ou_raw = _ou_player_preds[player.id]
-                    else:
-                        _ou_raw = rounds_to_win * win_probs[player.id] * len(players) * 0.6
+                # O/U per-player rounds - deviation from field mean, scaled by rounds_to_win
+                # Tight fields (all similar win%) cluster near baseline; spread fields diverge.
+                _mean_prob = 1 / len(players)
+                _baseline  = rounds_to_win * (0.5 + _mean_prob / 2)
+                _scale     = rounds_to_win * 2.0
 
-                    ou_line = max(1.5, min(rounds_to_win - 1.5, round(_ou_raw * 2) / 2))
+                for player in players:
+                    _ou_raw = _baseline + (win_probs[player.id] - _mean_prob) * _scale
+                    ou_line = min(rounds_to_win - 1.5, round(_ou_raw * 2) / 2)
                     others = {p.id for p in players if p.id != player.id}
                     bets_info[next_label()] = {
                         'type': 'ou_player',
@@ -461,8 +461,8 @@ class Bet(commands.Cog):
             instructions_embed.add_field(
                 name='How to Bet',
                 value=(
-                    f'**Single:** `A 100` — label then stake\n'
-                    f'**Parlay:** `A B 100` — labels then stake (2–6 legs, all must win)'
+                    f'**Single:** `A 100` - label then stake\n'
+                    f'**Parlay:** `A B 100` - labels then stake (2–6 legs, all must win)'
                 ),
                 inline=False
             )
@@ -537,7 +537,7 @@ class Bet(commands.Cog):
                         allowed_str = ', '.join(allowed) if allowed else 'none'
                         await thread.send(embed=discord.Embed(
                             description=(
-                                f"{author.mention} — as a player in this match you can only bet "
+                                f"{author.mention} - as a player in this match you can only bet "
                                 f"on your own positive outcomes. "
                                 f"Your allowed bets: **{allowed_str}**."
                             ),
@@ -565,7 +565,7 @@ class Bet(commands.Cog):
                     unknown = [l for l in leg_labels if l not in bets_info]
                     if unknown:
                         await thread.send(embed=discord.Embed(
-                            description=f"{author.mention} — unknown bet label(s): {', '.join(unknown)}.",
+                            description=f"{author.mention} - unknown bet label(s): {', '.join(unknown)}.",
                             color=discord.Color.red()
                         ))
                         continue
@@ -573,7 +573,7 @@ class Bet(commands.Cog):
                     # Duplicate labels
                     if len(leg_labels) != len(set(leg_labels)):
                         await thread.send(embed=discord.Embed(
-                            description=f"{author.mention} — duplicate labels in parlay.",
+                            description=f"{author.mention} - duplicate labels in parlay.",
                             color=discord.Color.red()
                         ))
                         continue
@@ -582,14 +582,14 @@ class Bet(commands.Cog):
                     if self._has_parlay_conflict(leg_labels, bets_info):
                         await thread.send(embed=discord.Embed(
                             description=(
-                                f"{author.mention} — parlay has conflicting legs "
+                                f"{author.mention} - parlay has conflicting legs "
                                 f"(e.g. two moneylines, or over + under on the same line)."
                             ),
                             color=discord.Color.red()
                         ))
                         continue
 
-                    # Restriction check — every leg must be self-bettable
+                    # Restriction check - every leg must be self-bettable
                     if in_game:
                         blocked = [
                             l for l in leg_labels
@@ -598,7 +598,7 @@ class Bet(commands.Cog):
                         if blocked:
                             await thread.send(embed=discord.Embed(
                                 description=(
-                                    f"{author.mention} — parlay includes legs you're not "
+                                    f"{author.mention} - parlay includes legs you're not "
                                     f"allowed to bet as a player in this match "
                                     f"(blocked: {', '.join(blocked)})."
                                 ),
@@ -620,7 +620,7 @@ class Bet(commands.Cog):
                 if _BET_ATTEMPT_REGEX.match(content):
                     await thread.send(embed=discord.Embed(
                         description=(
-                            f"{author.mention} — bet not recognized.\n"
+                            f"{author.mention} - bet not recognized.\n"
                             f"Single: `A 100` · Parlay: `A B 100` (2–6 legs)"
                         ),
                         color=discord.Color.red()
@@ -640,7 +640,7 @@ class Bet(commands.Cog):
                 "Example: `!bet 10 @Raf @Dom`"
             )
 
-    # PARLAY CONFLICT CHECKER (static — shared by bet processing and validator)
+    # PARLAY CONFLICT CHECKER (static - shared by bet processing and validator)
     
     @staticmethod
     def _has_parlay_conflict(leg_labels, bets_info):

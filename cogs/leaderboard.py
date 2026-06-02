@@ -13,11 +13,11 @@ class Leaderboard(commands.Cog):
         if mode == '1v1':
             sp_col   = 'sp_1v1'
             rank_col = 'rank_1v1'
-            title    = 'Leaderboard — 1v1'
+            title    = 'Leaderboard - 1v1'
         else:
             sp_col   = 'sp_mp'
             rank_col = 'rank_mp'
-            title    = 'Leaderboard — Multiplayer'
+            title    = 'Leaderboard - Multiplayer'
 
         async with aiosqlite.connect("rankings.db") as db:
             leaderboard_data = await db.execute(f"""
@@ -41,7 +41,7 @@ class Leaderboard(commands.Cog):
             username   = await get_display_name(ctx, user_id)
             rank_emote = (await get_emoji([rank]))[0]
             pos        = placement_emoji.get(i, f'{i}.')
-            line       = f"{pos} **{username}** — {sp} SP · {rank} {rank_emote}\n"
+            line       = f"{pos} **{username}** - {sp} SP · {rank} {rank_emote}\n"
 
             if len(desc) + len(line) > LIMIT:
                 current.description = desc

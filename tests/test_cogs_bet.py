@@ -104,14 +104,14 @@ def test_two_last_place_conflict():
 def test_last_place_and_h2h_winner_conflict():
     labels, info = _bets_info(
         _bet('head_to_head', pid_a=1, pid_b=2),  # 1 beats 2
-        _bet('last_place', pid_a=1),              # 1 is last — contradiction
+        _bet('last_place', pid_a=1),              # 1 is last - contradiction
     )
     assert Bet._has_parlay_conflict(labels, info) is True
 
 def test_last_place_and_h2h_loser_conflict():
     labels, info = _bets_info(
         _bet('head_to_head', pid_a=1, pid_b=2),  # 1 beats 2
-        _bet('last_place', pid_a=2),              # 2 is last — correlated
+        _bet('last_place', pid_a=2),              # 2 is last - correlated
     )
     assert Bet._has_parlay_conflict(labels, info) is True
 
@@ -130,7 +130,7 @@ def test_valid_moneyline_and_ou_total():
     assert Bet._has_parlay_conflict(labels, info) is False
 
 def test_valid_h2h_and_last_place_unrelated():
-    # H2H between players 1 and 2; last place on player 3 — no conflict
+    # H2H between players 1 and 2; last place on player 3 - no conflict
     labels, info = _bets_info(
         _bet('head_to_head', pid_a=1, pid_b=2),
         _bet('last_place', pid_a=3),

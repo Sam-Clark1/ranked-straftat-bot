@@ -52,7 +52,7 @@ class Matchstats(commands.Cog):
         if stats_1v1:
             embeds      = []
             current     = discord.Embed(
-                title=f'1v1 Match Stats — {player.display_name}', color=_PALE_GREEN
+                title=f'1v1 Match Stats - {player.display_name}', color=_PALE_GREEN
             )
             current.set_thumbnail(url=player.display_avatar.url)
             field_count = 0
@@ -71,7 +71,7 @@ class Matchstats(commands.Cog):
                 current.add_field(
                     name=f'vs {opponent_name}',
                     value=(
-                        f"**{wins}W — {losses}L** ({win_pct:.1f}%)\n"
+                        f"**{wins}W - {losses}L** ({win_pct:.1f}%)\n"
                         f"Rounds: {rw}–{rl} ({round_pct:.1f}%)\n"
                         ' ———————————' 
                     ),
@@ -87,7 +87,7 @@ class Matchstats(commands.Cog):
         if stats_mp:
             embeds      = []
             current     = discord.Embed(
-                title=f'MP Match Stats — {player.display_name}', color=_PALE_GREEN
+                title=f'MP Match Stats - {player.display_name}', color=_PALE_GREEN
             )
             current.set_thumbnail(url=player.display_avatar.url)
             field_count = 0
@@ -104,7 +104,7 @@ class Matchstats(commands.Cog):
                     field_count = 0
 
                 current.add_field(
-                    name=f'vs {opponent_name} — {shared} shared games',
+                    name=f'vs {opponent_name} - {shared} shared games',
                     value=(
                         f"Final Placements:\n"
                         f"Above: {above} | Below: {below} ({above_pct:.1f}%)\n"

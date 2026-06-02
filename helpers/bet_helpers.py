@@ -216,11 +216,11 @@ async def create_odds_display(thread, bets_info, game_mode):
             await thread.send(files=files)
 
 
-# BET PLACEMENT — SINGLE BET
+# BET PLACEMENT - SINGLE BET
 
 async def handle_bet_placements(match_title, label, amount, bet_meta, thread, message, db):
     """
-    Validates balance, deducts stake, inserts bet into live_bets, and commits —
+    Validates balance, deducts stake, inserts bet into live_bets, and commits -
     all in one operation. Returns True on success, False on failure.
     """
     user_id  = message.author.id
@@ -245,7 +245,7 @@ async def handle_bet_placements(match_title, label, amount, bet_meta, thread, me
         if amount > current_coins:
             await thread.send(embed=discord.Embed(
                 description=(
-                    f"{message.author.mention} — insufficient Straftcoins! "
+                    f"{message.author.mention} - insufficient Straftcoins! "
                     f"You only have **{sc_fmt(current_coins)}** {sc_emoji}."
                 ),
                 color=discord.Color.red()
@@ -263,7 +263,7 @@ async def handle_bet_placements(match_title, label, amount, bet_meta, thread, me
         if amount > initial:
             await thread.send(embed=discord.Embed(
                 description=(
-                    f"{message.author.mention} — you start with **{sc_fmt(initial)}** {sc_emoji} "
+                    f"{message.author.mention} - you start with **{sc_fmt(initial)}** {sc_emoji} "
                     f"and can't bet more than that."
                 ),
                 color=discord.Color.red()
@@ -303,7 +303,7 @@ async def handle_bet_placements(match_title, label, amount, bet_meta, thread, me
     return True
 
 
-# BET PLACEMENT — PARLAY
+# BET PLACEMENT - PARLAY
 
 async def handle_parlay_placement(match_title, leg_labels, stake, bets_info, thread, message, db):
     """
@@ -334,7 +334,7 @@ async def handle_parlay_placement(match_title, leg_labels, stake, bets_info, thr
     if stake > current_coins:
         await thread.send(embed=discord.Embed(
             description=(
-                f"{message.author.mention} — insufficient Straftcoins! "
+                f"{message.author.mention} - insufficient Straftcoins! "
                 f"You only have **{sc_fmt(current_coins)}** {sc_emoji}."
             ),
             color=discord.Color.red()
@@ -911,7 +911,7 @@ async def calculate_mp_win_probabilities(player_ids, db):
     for placement score (avg placement relative to field) and round rate.
 
     placement_score replaces the old binary wins_mp/losses_mp win rate,
-    giving continuous credit for 2nd, 3rd, etc. — not just 1st place.
+    giving continuous credit for 2nd, 3rd, etc. - not just 1st place.
     """
     scores = {}
     for pid in player_ids:

@@ -78,10 +78,10 @@ class Stats(commands.Cog):
         for placement, cnt in placement_rows:
             label = _PLACE_EMOJI.get(placement, f'{placement}th')
             place_parts.append(f'{label}: {cnt}')
-        placement_str = ' | '.join(place_parts) if place_parts else '—'
+        placement_str = ' | '.join(place_parts) if place_parts else '-'
 
         # Build embed 
-        embed = discord.Embed(title=f'Stats — {player.display_name}', color=_PALE_GREEN)
+        embed = discord.Embed(title=f'Stats - {player.display_name}', color=_PALE_GREEN)
         embed.set_thumbnail(url=player.display_avatar.url)
 
         embed.add_field(

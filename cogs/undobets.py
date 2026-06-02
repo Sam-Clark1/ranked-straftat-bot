@@ -19,14 +19,14 @@ class UndoBets(commands.Cog):
 
         async with aiosqlite.connect("rankings.db") as db:
 
-            # Single bet refunds — sum bet_amount per user where no parlay
+            # Single bet refunds - sum bet_amount per user where no parlay
             async with db.execute(
                 "SELECT user_id, SUM(bet_amount) FROM live_bets "
                 "WHERE parlay_id IS NULL GROUP BY user_id"
             ) as cursor:
                 single_refunds = await cursor.fetchall()
 
-            # Parlay refunds — use parlays.total_stake, not live_bets rows,
+            # Parlay refunds - use parlays.total_stake, not live_bets rows,
             # because each leg row carries the full stake (would over-refund otherwise)
             async with db.execute(
                 "SELECT user_id, SUM(total_stake) FROM parlays "
@@ -62,7 +62,7 @@ class UndoBets(commands.Cog):
 
         embed = discord.Embed(
             title='Live Bets Cancelled',
-            description='\n'.join(f'<@{uid}> — +{sc_fmt(amt)} SC' for uid, amt in refunds.items()),
+            description='\n'.join(f'<@{uid}> - +{sc_fmt(amt)} SC' for uid, amt in refunds.items()),
             color=discord.Color(0x90ee90)
         )
         await ctx.send(embed=embed)
