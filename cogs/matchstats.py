@@ -19,6 +19,7 @@ class Matchstats(commands.Cog):
                     COUNT(*) AS shared_games,
                     SUM(CASE WHEN mp1.placement < mp2.placement THEN 1 ELSE 0 END) AS above_count,
                     SUM(CASE WHEN mp1.placement > mp2.placement THEN 1 ELSE 0 END) AS below_count,
+                    SUM(CASE WHEN mp1.placement = mp2.placement THEN 1 ELSE 0 END) AS tied_count,
                     SUM(mp1.rounds_won) AS rounds_won,
                     SUM(mp2.rounds_won) AS rounds_lost,
                     SUM(CASE WHEN mp1.placement = 1 THEN 1 ELSE 0 END) AS first_place_count,
@@ -39,8 +40,8 @@ class Matchstats(commands.Cog):
 
         stats_1v1 = {}
         stats_mp  = {}
-        for opponent_id, game_mode, shared, above, below, rw, rl, first_place, avg_diff in rows:
-            entry = (shared, above, below, rw, rl, first_place, avg_diff)
+        for opponent_id, game_mode, shared, above, below, tied, rw, rl, first_place, avg_diff in rows:
+            entry = (shared, above, below, tied, rw, rl, first_place, avg_diff)
             if game_mode == '1v1':
                 stats_1v1[opponent_id] = entry
             else:
@@ -57,7 +58,7 @@ class Matchstats(commands.Cog):
             current.set_thumbnail(url=player.display_avatar.url)
             field_count = 0
 
-            for opponent_id, (shared, wins, losses, rw, rl, _, _) in stats_1v1.items():
+            for opponent_id, (shared, wins, losses, _, rw, rl, _, _) in stats_1v1.items():
                 opponent_name = await get_display_name(ctx, opponent_id)
                 total_rounds  = rw + rl
                 win_pct   = wins / shared * 100       if shared > 0       else 0
@@ -92,11 +93,14 @@ class Matchstats(commands.Cog):
             current.set_thumbnail(url=player.display_avatar.url)
             field_count = 0
 
-            for opponent_id, (shared, above, below, _, _, first_place, avg_diff) in stats_mp.items():
+            for opponent_id, (shared, above, below, tied, _, _, first_place, avg_diff) in stats_mp.items():
                 opponent_name = await get_display_name(ctx, opponent_id)
                 above_pct  = above / shared * 100       if shared > 0 else 0
+                below_pct  = below / shared * 100       if shared > 0 else 0
+                tied_pct   = tied  / shared * 100       if shared > 0 else 0
                 win_rate   = first_place / shared * 100 if shared > 0 else 0
                 diff_str   = f"+{avg_diff:.1f}" if avg_diff >= 0 else f"{avg_diff:.1f}"
+                tied_str   = f" | Tied: {tied} ({tied_pct:.1f}%)" if tied > 0 else ""
 
                 if field_count >= 25:
                     embeds.append(current)
@@ -107,7 +111,7 @@ class Matchstats(commands.Cog):
                     name=f'vs {opponent_name} - {shared} shared games',
                     value=(
                         f"Final Placements:\n"
-                        f"Above: {above} | Below: {below} ({above_pct:.1f}%)\n"
+                        f"Above: {above} ({above_pct:.1f}%) | Below: {below} ({below_pct:.1f}%){tied_str}\n"
                         f"Avg placement diff: {diff_str}\n"
                         f"Win rate: {win_rate:.1f}%\n"
                         ' ———————————'
