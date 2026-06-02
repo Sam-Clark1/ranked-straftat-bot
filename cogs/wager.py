@@ -20,7 +20,7 @@ class Wager(commands.Cog):
         """
         Usage: !wager @Player
         Opens a 2-minute window. Both players type 'wager <amount>' in the thread.
-        Amounts can be edited until the timer ends — first message's final amount is used.
+        Amounts can be edited until the timer ends - first message's final amount is used.
         Winner of the 1v1 takes the total pot when the match is recorded.
         """
         player_a = ctx.author
@@ -67,7 +67,7 @@ class Wager(commands.Cog):
         # --- Create countdown message and thread ---
         seconds = _WAGER_SECONDS
         minutes_init, secs_init = divmod(seconds, 60)
-        wager_title = f"{player_a.display_name} vs {player_b.display_name} — Wager"
+        wager_title = f"{player_a.display_name} vs {player_b.display_name} - Wager"
 
         bot_message = await ctx.send(
             f"Wager: **{player_a.display_name}** vs **{player_b.display_name}**\n"
@@ -140,7 +140,7 @@ class Wager(commands.Cog):
             if b_amount is None:
                 missing.append(player_b.mention)
             await thread.send(embed=discord.Embed(
-                description=f"❌ Wager cancelled — {', '.join(missing)} did not submit a stake.",
+                description=f"❌ Wager cancelled - {', '.join(missing)} did not submit a stake.",
                 color=discord.Color.red()
             ))
             await thread.edit(locked=True)
@@ -174,7 +174,7 @@ class Wager(commands.Cog):
 
             if errors:
                 await thread.send(embed=discord.Embed(
-                    description="❌ Wager cancelled — insufficient funds: " + "; ".join(errors),
+                    description="❌ Wager cancelled - insufficient funds: " + "; ".join(errors),
                     color=discord.Color.red()
                 ))
                 await thread.edit(locked=True)

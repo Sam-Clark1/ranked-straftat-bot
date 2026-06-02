@@ -124,7 +124,7 @@ class Record(commands.Cog):
 
             embed = discord.Embed(
                 title='Match Recorded',
-                description=f'*{mode_label} — First to {rounds_to_win}*',
+                description=f'*{mode_label} - First to {rounds_to_win}*',
                 color=discord.Color(0x90ee90)
             )
 
@@ -135,7 +135,7 @@ class Record(commands.Cog):
                 icon    = f"#{r['placement']}"
 
                 embed.add_field(
-                    name=f"{icon} {member.display_name} — {r['rounds_won']} rounds",
+                    name=f"{icon} {member.display_name} - {r['rounds_won']} rounds",
                     value=(
                         f"SP: {sp_str} → **{r['new_sp']}**\n"
                         f"Rank: **{r['rank']}** {r['rank_emoji']}\n"
@@ -174,7 +174,7 @@ class Record(commands.Cog):
                 embeds, mentions = bet_settlements_message
                 winner_member = member_lookup[winner['player_id']]
                 settlement_thread = await ctx.channel.create_thread(
-                    name=f"Resolved Bets — {winner_member.display_name}'s match",
+                    name=f"Resolved Bets - {winner_member.display_name}'s match",
                     message=message
                 )
                 for i, embed in enumerate(embeds):
@@ -191,7 +191,7 @@ class Record(commands.Cog):
                     if settlement_thread is None:
                         winner_member = member_lookup[winner['player_id']]
                         settlement_thread = await ctx.channel.create_thread(
-                            name=f"Resolved Bets — {winner_member.display_name}'s match",
+                            name=f"Resolved Bets - {winner_member.display_name}'s match",
                             message=message
                         )
                     for wr in wager_results:
