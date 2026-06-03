@@ -21,7 +21,7 @@ async def on_ready():
         await db.execute("""
         CREATE TABLE IF NOT EXISTS players (
             user_id             INTEGER PRIMARY KEY,
-            rating_1v1          REAL DEFAULT 1000,
+            rating_1v1          REAL DEFAULT 500,
             sp_1v1              INTEGER DEFAULT 0,
             rank_1v1            TEXT DEFAULT 'Shitterton IV',
             wins_1v1            INTEGER DEFAULT 0,
@@ -30,7 +30,7 @@ async def on_ready():
             rounds_lost_1v1     INTEGER DEFAULT 0,
             highest_rank_1v1    TEXT DEFAULT 'Shitterton IV',
             highest_sp_1v1      INTEGER DEFAULT 0,
-            rating_mp           REAL DEFAULT 1000,
+            rating_mp           REAL DEFAULT 500,
             sp_mp               INTEGER DEFAULT 0,
             rank_mp             TEXT DEFAULT 'Shitterton IV',
             wins_mp             INTEGER DEFAULT 0,
@@ -39,7 +39,7 @@ async def on_ready():
             rounds_lost_mp      INTEGER DEFAULT 0,
             highest_rank_mp     TEXT DEFAULT 'Shitterton IV',
             highest_sp_mp       INTEGER DEFAULT 0,
-            straftcoins         INTEGER DEFAULT 1000
+            straftcoins         INTEGER DEFAULT 10000
         )
         """)
 
