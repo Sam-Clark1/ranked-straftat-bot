@@ -142,29 +142,10 @@ async def get_player_matches(db, user_id):
 # checks if players are in players table and adds if they aren't
 async def handle_inputted_players(player_ids, db):
     for player_id in player_ids:
-        await db.execute("""
-            INSERT OR IGNORE INTO players (
-                user_id,
-                rating_1v1, sp_1v1, rank_1v1,
-                wins_1v1, losses_1v1,
-                rounds_won_1v1, rounds_lost_1v1,
-                highest_rank_1v1, highest_sp_1v1,
-                rating_mp, sp_mp, rank_mp,
-                wins_mp, losses_mp,
-                rounds_won_mp, rounds_lost_mp,
-                highest_rank_mp, highest_sp_mp,
-                straftcoins
-            ) VALUES (
-                ?,
-                1000, 0, 'Shitterton IV',
-                0, 0, 0, 0,
-                'Shitterton IV', 0,
-                1000, 0, 'Shitterton IV',
-                0, 0, 0, 0,
-                'Shitterton IV', 0,
-                1000
-            )
-        """, (player_id,))
+        await db.execute(
+            "INSERT OR IGNORE INTO players (user_id) VALUES (?)",
+            (player_id,)
+        )
     await db.commit()
 
 async def match_to_db(player_rounds, rounds_to_win, db):
